@@ -1,6 +1,6 @@
 import React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FiArchive, FiDownload, FiMessageSquare, FiRefreshCw, FiSearch, FiUploadCloud } from "react-icons/fi";
+import { FiArchive, FiDownload, FiFilter, FiMessageSquare, FiSearch, FiUploadCloud } from "react-icons/fi";
 import { api } from "../api/client.js";
 import CommentThread from "../components/CommentThread.jsx";
 
@@ -13,6 +13,7 @@ export default function SubmissionsPage() {
   const [reuploadError, setReuploadError] = useState("");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
 
   const loadUploads = useCallback(async () => {
     const response = await api.get("/uploads");
@@ -33,7 +34,7 @@ export default function SubmissionsPage() {
     const search = query.trim().toLowerCase();
     return uploads.filter((upload) => {
       const matchesStatus = !status || upload.status === status;
-      const matchesSearch = !search || [upload.filename, upload.uploader_name, upload.status]
+      const matchesSearch = !search || [upload.filename, upload.uploader_name, upload.status, upload.id]
         .some((value) => String(value || "").toLowerCase().includes(search));
       return matchesStatus && matchesSearch;
     });
@@ -91,7 +92,7 @@ export default function SubmissionsPage() {
   }
 
   return (
-    <div className="app-page submissions-page">
+    <div className="lf-submissions-page">
       <input
         ref={reuploadInputRef}
         className="hidden"
@@ -100,89 +101,87 @@ export default function SubmissionsPage() {
         onChange={(event) => submitReupload(event.target.files?.[0])}
       />
 
-      <section className="submissions-header">
-        <div>
-          <h1>Submissions</h1>
-          <p>Audit upload history, review status, and exported transaction batches.</p>
-        </div>
-        <button className="secondary-button" onClick={loadUploads}>
-          <FiRefreshCw /> Refresh
-        </button>
-      </section>
-
-      <section className="submissions-toolbar elevated-panel">
-        <label className="upload-search">
-          <FiSearch />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search filename, uploader, status..." />
+      <section className="lf-submissions-toolbar">
+        <label className="lf-submissions-search">
+          <FiSearch size={18} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search submissions..." />
         </label>
-        <select className="form-input" value={status} onChange={(event) => setStatus(event.target.value)}>
-          <option value="">All statuses</option>
-          <option value="pending">Pending</option>
-          <option value="approved">Approved</option>
-          <option value="declined">Declined</option>
-          <option value="reupload_requested">Re-upload requested</option>
-        </select>
-        <button className="primary-button" onClick={exportCsv} disabled={!filtered.length}>
-          <FiDownload /> Export
-        </button>
+
+        <div className="lf-submissions-toolbar__actions">
+          <button className="lf-submissions-filter-button" onClick={() => setShowFilters((value) => !value)} type="button">
+            <FiFilter size={18} />
+            <span>Filter</span>
+          </button>
+          <button className="secondary-button" onClick={exportCsv} disabled={!filtered.length} type="button">
+            <FiDownload /> Export
+          </button>
+        </div>
       </section>
 
-      <section className="elevated-panel submissions-table-card">
-        {reuploadError && <div className="comment-error">{reuploadError}</div>}
-        <table className="submissions-table">
+      {showFilters && (
+        <section className="lf-submissions-filter-row">
+          <select className="form-input" value={status} onChange={(event) => setStatus(event.target.value)}>
+            <option value="">All statuses</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="declined">Declined</option>
+            <option value="reupload_requested">Re-upload requested</option>
+          </select>
+        </section>
+      )}
+
+      {reuploadError && <div className="lf-submissions-error">{reuploadError}</div>}
+
+      <section className="lf-submissions-table-wrap">
+        <table className="lf-submissions-table">
           <thead>
             <tr>
-              <th>File</th>
+              <th className="is-checkbox"><input type="checkbox" aria-label="Select all" /></th>
+              <th>ID</th>
+              <th>User</th>
+              <th>Type</th>
+              <th>Amount</th>
               <th>Status</th>
-              <th>Rows</th>
-              <th>Columns</th>
-              <th>Uploader</th>
-              <th>Created</th>
-              <th>Version</th>
-              <th>Conversation</th>
-              <th>Action</th>
+              <th>Submitted</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((upload) => (
-              <tr key={upload.id} className={selectedUpload?.id === upload.id ? "is-selected" : ""}>
-                <td>
-                  <div className="submission-file">
-                    <span><FiArchive /></span>
-                    <div className="submission-file-copy">
-                      <strong>{upload.filename}</strong>
+            {filtered.map((upload, index) => {
+              const parts = inferSubmissionType(upload);
+              const amount = inferAmount(upload);
+              const timestamp = formatSubmitted(upload.created_at);
+              return (
+                <tr key={upload.id} className={selectedUpload?.id === upload.id ? "is-selected" : ""}>
+                  <td className="is-checkbox"><input type="checkbox" aria-label={`Select ${upload.filename}`} /></td>
+                  <td className="mono-cell">{formatSubmissionCode(upload, index)}</td>
+                  <td className="lf-submissions-user">{upload.uploader_name || "Unknown User"}</td>
+                  <td className="lf-submissions-type">{parts}</td>
+                  <td className="mono-cell">{amount}</td>
+                  <td><StatusPill status={upload.status} /></td>
+                  <td>
+                    <div className="lf-submissions-date">{timestamp.date}</div>
+                    <div className="lf-submissions-time">{timestamp.time}</div>
+                  </td>
+                  <td>
+                    <div className="lf-submissions-actions">
+                      <button className="lf-submissions-view" onClick={() => setSelectedUpload(upload)} type="button">View</button>
                       {upload.status === "reupload_requested" && (
-                        <em>Re-upload Required</em>
+                        <button className="lf-submissions-approve" onClick={() => startReupload(upload)} disabled={reuploading === upload.id} type="button">
+                          <FiUploadCloud size={15} />
+                          {reuploading === upload.id ? "Uploading..." : "Re-upload"}
+                        </button>
                       )}
                     </div>
-                  </div>
-                </td>
-                <td><span className={`status-badge status-${upload.status}`}>{upload.status}</span></td>
-                <td className="mono">{Number(upload.total_rows || 0).toLocaleString("en-IN")}</td>
-                <td className="mono">{upload.total_columns || 0}</td>
-                <td>{upload.uploader_name || "-"}</td>
-                <td>{upload.created_at ? new Date(upload.created_at).toLocaleString("en-IN") : "-"}</td>
-                <td><span className="version-chip">v{upload.version_number || 1}</span></td>
-                <td>
-                  <button className="secondary-button submission-comment-button" onClick={() => setSelectedUpload(upload)}>
-                    <FiMessageSquare /> Open
-                  </button>
-                </td>
-                <td>
-                  {upload.status === "reupload_requested" ? (
-                    <button className="primary-button submission-comment-button" onClick={() => startReupload(upload)} disabled={reuploading === upload.id}>
-                      <FiUploadCloud /> {reuploading === upload.id ? "Uploading..." : "Re-upload"}
-                    </button>
-                  ) : (
-                    <span className="muted-cell">-</span>
-                  )}
-                </td>
-              </tr>
-            ))}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
+
         {!filtered.length && (
-          <div className="submissions-empty">
+          <div className="lf-submissions-empty">
             <FiArchive />
             <strong>No submissions found</strong>
             <span>Upload activity and review history will appear here.</span>
@@ -191,17 +190,62 @@ export default function SubmissionsPage() {
       </section>
 
       {selectedUpload && (
-        <section className="elevated-panel submissions-conversation-panel">
-          <div className="submissions-conversation-header">
+        <section className="lf-submissions-conversation">
+          <div className="lf-submissions-conversation__head">
             <div>
               <h2>{selectedUpload.filename}</h2>
-              <p>{selectedUpload.status} - {Number(selectedUpload.total_rows || 0).toLocaleString("en-IN")} rows</p>
+              <p>{selectedUpload.status} • {Number(selectedUpload.total_rows || 0).toLocaleString("en-IN")} rows • v{selectedUpload.version_number || 1}</p>
             </div>
-            <button className="secondary-button" onClick={() => setSelectedUpload(null)}>Close</button>
+            <button className="secondary-button" onClick={() => setSelectedUpload(null)} type="button">
+              Close
+            </button>
           </div>
           <CommentThread submissionId={selectedUpload.id} title="Submission conversation" />
         </section>
       )}
     </div>
   );
+}
+
+function formatSubmissionCode(upload, index) {
+  if (upload.id) {
+    const digits = String(upload.id).replace(/\D/g, "").slice(-5).padStart(5, "0");
+    return `SUB-${digits}`;
+  }
+  return `SUB-${String(index + 1).padStart(5, "0")}`;
+}
+
+function inferSubmissionType(upload) {
+  const name = String(upload.filename || "").toLowerCase();
+  if (name.includes("expense")) return "Expense Report";
+  if (name.includes("invoice")) return "Invoice";
+  if (name.includes("reimburse")) return "Reimbursement";
+  if (name.includes("purchase")) return "Purchase Order";
+  return "Submission";
+}
+
+function inferAmount(upload) {
+  const raw = Number(upload.total_amount || upload.amount || 0);
+  if (!raw) return "-";
+  return `?${raw.toLocaleString("en-IN")}`;
+}
+
+function formatSubmitted(value) {
+  if (!value) return { date: "-", time: "" };
+  const date = new Date(value);
+  return {
+    date: date.toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" }),
+    time: date.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })
+  };
+}
+
+function StatusPill({ status }) {
+  const normalized = String(status || "unknown").toLowerCase();
+  const labelMap = {
+    approved: "Approved",
+    pending: "Pending",
+    declined: "Rejected",
+    reupload_requested: "Under Review"
+  };
+  return <span className={`lf-submissions-status lf-submissions-status-${normalized}`}>{labelMap[normalized] || normalized.replaceAll("_", " ")}</span>;
 }

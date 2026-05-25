@@ -1,8 +1,14 @@
 import React from "react";
 import { useState } from "react";
-import { FiBarChart2, FiLock, FiLogIn, FiUserPlus } from "react-icons/fi";
+import { FiBarChart2, FiLock, FiMail, FiShield, FiUser, FiUserPlus } from "react-icons/fi";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext.jsx";
+
+const activityItems = [
+  { label: "Upload approved from Finance team", status: "Approved" },
+  { label: "Manager queue refreshed", status: "Live" },
+  { label: "Audit snapshot recorded", status: "Tracked" },
+];
 
 export default function AuthPage() {
   const [mode, setMode] = useState("login");
@@ -44,211 +50,134 @@ export default function AuthPage() {
   }
 
   return (
-    <main className="grid min-h-screen bg-background lg:grid-cols-[1fr_380px]">
-      {/* LEFT PANEL - Teal branding section (55% width on large screens) */}
-      <section className="hidden flex-col justify-between px-12 py-10 lg:flex animate-slide-in-left relative overflow-hidden" style={{ background: "linear-gradient(135deg, #0D3B38 0%, #155E58 58%, #1E8278 100%)" }}>
-        {/* Decorative circles */}
-        <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full bg-white" style={{ opacity: 0.07, animation: "floatSoft 7s ease-in-out infinite" }} />
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full bg-white" style={{ opacity: 0.05, animation: "floatSoft 8s ease-in-out infinite reverse" }} />
-        <div className="absolute left-1/4 top-1/3 h-px w-2/3" style={{ background: "linear-gradient(90deg, transparent, rgba(58, 191, 177, 0.36), transparent)", animation: "shimmerLine 5s ease-in-out infinite" }} />
-        
-        <div className="relative z-10">
-          {/* Logo */}
-          <div className="flex items-center gap-3 animate-slide-in-left" style={{ animationDelay: "0.15s" }}>
-            <div className="flex h-10 w-10 items-center justify-center text-white transition-all-smooth" style={{ borderRadius: 10, background: "rgba(255, 255, 255, 0.16)", border: "1px solid rgba(255,255,255,0.18)" }}>
-              <FiBarChart2 size={20} />
-            </div>
-            <div>
-              <div className="text-sm font-bold text-white">LedgerFlow</div>
-              <div className="text-xs" style={{ color: "rgba(255, 255, 255, 0.6)" }}>Analytics Platform</div>
-            </div>
+    <main className="auth-page-shell">
+      <section className="auth-page-hero">
+        <div className="auth-page-hero__brand">
+          <div className="auth-page-hero__logo auth-depth-chip">
+            <FiBarChart2 size={20} />
           </div>
-
-          {/* Animated headline */}
-          <div className="max-w-xl mt-12">
-            <h1 className="text-4xl font-medium leading-tight text-white" style={{ animation: "slideInFromLeft 0.6s ease-out 0.32s both" }}>
-              Controlled uploads,
-            </h1>
-            <h1 className="text-4xl font-medium leading-tight text-white mt-3" style={{ animation: "slideInFromLeft 0.6s ease-out 0.49s both" }}>
-              visible approvals,
-            </h1>
-            <div className="mt-3" style={{ animation: "slideInFromLeft 0.6s ease-out 0.66s both" }}>
-              <span className="text-4xl font-medium leading-tight text-white">cleaner</span>
-              <span 
-                className="text-4xl font-medium ml-3 px-4 py-2 rounded-lg" 
-                style={{ background: "rgba(58, 191, 177, 0.18)", color: "#C8FFF6", border: "1px solid rgba(58, 191, 177, 0.24)" }}
-              >
-                analytics.
-              </span>
-            </div>
-
-            <p className="mt-6 text-base leading-relaxed" style={{ color: "rgba(255, 255, 255, 0.6)", animation: "fadeIn 0.6s ease-out 0.8s both" }}>
-              Sign in to upload spreadsheets, review manager queues, and keep every approved row tied to the right person.
-            </p>
+          <div>
+            <div className="auth-page-hero__brand-name">LedgerFlow</div>
+            <div className="auth-page-hero__brand-sub">Analytics Platform</div>
           </div>
         </div>
 
-        {/* Activity ticker - Real-time events */}
-        <div className="relative z-10 space-y-3">
-          <div className="flex items-center gap-2 mb-4" style={{ color: "rgba(255, 255, 255, 0.6)" }}>
-            <div className="w-1 h-1 bg-white rounded-full" />
-            <span className="text-xs font-medium uppercase">Live Activity</span>
+        <div className="auth-page-hero__copy">
+          <h1>Controlled uploads,</h1>
+          <h1>visible approvals,</h1>
+          <div className="auth-page-hero__headline-row">
+            <span>cleaner</span>
+            <span className="auth-page-hero__headline-chip auth-depth-chip">analytics.</span>
           </div>
-          <div className="space-y-2" style={{ animation: "tickerCycle 6s ease-in-out infinite" }}>
-            <div className="flex items-center justify-between text-sm" style={{ color: "rgba(255, 255, 255, 0.8)" }}>
-              <span>Upload approved from Finance team</span>
-              <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-500/20 text-green-300 rounded text-xs font-medium">
-                <span className="w-1 h-1 bg-green-400 rounded-full" /> Approved
-              </span>
-            </div>
+          <p>
+            Sign in to upload spreadsheets, review manager queues, and keep every approved row tied to the right person.
+          </p>
+        </div>
+
+        <div className="auth-page-hero__activity">
+          <div className="auth-page-hero__activity-label">
+            <span className="auth-page-hero__activity-dot" />
+            <span>Live Activity</span>
+          </div>
+          <div className="auth-page-hero__activity-list">
+            {activityItems.map((item) => (
+              <div key={item.label} className="auth-page-hero__activity-item auth-depth-ticker">
+                <span>{item.label}</span>
+                <span className="status-badge status-approved">{item.status}</span>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="text-xs relative z-10" style={{ color: "rgba(255, 255, 255, 0.3)" }}>
-          PostgreSQL-backed workflow workspace
-        </div>
+        <div className="auth-page-hero__footer">PostgreSQL-backed workflow workspace</div>
       </section>
 
-      {/* RIGHT PANEL - Form (360px fixed on large screens) */}
-      <section className="flex items-center justify-center p-6" style={{ background: "#F7F5F0" }}>
-        <form className="w-full max-w-sm elevated-panel fintech-card p-6 animate-fade-in-scale" onSubmit={submit} style={{ animationDelay: "0.2s" }}>
-          {/* Form Header */}
-          <div className="mb-6 animate-slide-in-top" style={{ animationDelay: "0.3s" }}>
-            <h1 className="text-xl font-medium" style={{ color: "#0a3d2e" }}>
-              {mode === "login" ? "Welcome back" : "Create account"}
-            </h1>
-            <p className="text-sm mt-1" style={{ color: "#6b9080" }}>
-              {mode === "login" ? "Sign in to your LedgerFlow account." : "Set up your workspace role."}
-            </p>
+      <section className="auth-page-form-wrap">
+        <form className="auth-page-form elevated-panel fintech-card auth-depth-panel" onSubmit={submit}>
+          <div className="auth-page-form__header">
+            <h2>{mode === "login" ? "Welcome back" : "Create account"}</h2>
+            <p>{mode === "login" ? "Sign in to your LedgerFlow account." : "Set up your workspace role."}</p>
           </div>
 
-          {/* Tab Switcher */}
-          <div className="mb-6 grid grid-cols-2 gap-1 p-1" style={{ background: "#E7F5F1", borderRadius: 10 }}>
-            <button 
-              type="button" 
-              className="px-3 py-2 text-sm font-medium transition-all-smooth rounded" 
-              style={{
-                background: mode === "login" ? "#ffffff" : "transparent",
-                color: mode === "login" ? "#155E58" : "#6D837B",
-                borderRadius: 8,
-                boxShadow: mode === "login" ? "0 1px 3px rgba(0, 0, 0, 0.08)" : "none"
-              }}
-              onClick={() => setMode("login")}
-            >
-              Sign In
-            </button>
-            <button 
-              type="button" 
-              className="px-3 py-2 text-sm font-medium transition-all-smooth rounded" 
-              style={{
-                background: mode === "register" ? "#ffffff" : "transparent",
-                color: mode === "register" ? "#155E58" : "#6D837B",
-                borderRadius: 8,
-                boxShadow: mode === "register" ? "0 1px 3px rgba(0, 0, 0, 0.08)" : "none"
-              }}
-              onClick={() => setMode("register")}
-            >
-              Register
-            </button>
+          <div className="auth-page-form__tabs">
+            <button type="button" className={mode === "login" ? "is-active" : ""} onClick={() => setMode("login")}>Sign In</button>
+            <button type="button" className={mode === "register" ? "is-active" : ""} onClick={() => setMode("register")}>Register</button>
           </div>
 
-          {/* Form Fields */}
-          <div className="space-y-3">
+          <div className="auth-page-form__fields">
             {mode === "register" && (
-              <label className="block animate-slide-in-bottom" style={{ animationDelay: "0.35s" }}>
-                <span className="mb-2 block text-xs font-medium uppercase tracking-wide" style={{ color: "#3a6655", letterSpacing: "0.06em" }}>Full Name</span>
-                <div style={{ position: "relative" }}>
-                  <FiUserPlus style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "#8ab8aa", fontSize: 15, pointerEvents: "none" }} />
-                  <input 
-                    className="form-input" 
-                    value={name} 
-                    onChange={(event) => setName(event.target.value)} 
-                    minLength={2} 
-                    required 
-                    placeholder="John Doe"
-                  />
-                </div>
-              </label>
+              <Field label="Full Name" icon={<FiUserPlus size={15} />}>
+                <input
+                  className="form-input auth-page-form__input"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  minLength={2}
+                  required
+                  placeholder="John Doe"
+                />
+              </Field>
             )}
-            <label className="block animate-slide-in-bottom" style={{ animationDelay: mode === "register" ? "0.4s" : "0.35s" }}>
-              <span className="mb-2 block text-xs font-medium uppercase tracking-wide" style={{ color: "#3a6655", letterSpacing: "0.06em" }}>Email Address</span>
-              <div style={{ position: "relative" }}>
-                <FiBarChart2 style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "#8ab8aa", fontSize: 15, pointerEvents: "none" }} />
-                <input 
-                  className="form-input" 
-                  type="email" 
-                  value={email} 
-                  onChange={(event) => setEmail(event.target.value)} 
-                  required 
-                  placeholder="name@company.com"
-                />
-              </div>
-            </label>
-            <label className="block animate-slide-in-bottom" style={{ animationDelay: mode === "register" ? "0.45s" : "0.4s" }}>
-              <span className="mb-2 block text-xs font-medium uppercase tracking-wide" style={{ color: "#3a6655", letterSpacing: "0.06em" }}>Password</span>
-              <div style={{ position: "relative" }}>
-                <FiLock style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "#8ab8aa", fontSize: 15, pointerEvents: "none" }} />
-                <input 
-                  className="form-input" 
-                  type="password" 
-                  value={password} 
-                  onChange={(event) => setPassword(event.target.value)} 
-                  minLength={8} 
-                  required 
-                  placeholder="••••••••"
-                />
-              </div>
-            </label>
+
+            <Field label="Email Address" icon={<FiMail size={15} />}>
+              <input
+                className="form-input auth-page-form__input"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required
+                placeholder="name@company.com"
+              />
+            </Field>
+
+            <Field label="Password" icon={<FiLock size={15} />}>
+              <input
+                className="form-input auth-page-form__input"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                minLength={8}
+                required
+                placeholder="Password"
+              />
+            </Field>
+
             {mode === "register" && (
-              <label className="block animate-slide-in-bottom" style={{ animationDelay: "0.5s" }}>
-                <span className="mb-2 block text-xs font-medium uppercase tracking-wide" style={{ color: "#3a6655", letterSpacing: "0.06em" }}>Your Role</span>
-                <select 
-                  className="form-input" 
-                  value={role} 
-                  onChange={(event) => setRole(event.target.value)}
-                  style={{ paddingLeft: 36 }}
-                >
+              <Field label="Your Role" icon={<FiShield size={15} />}>
+                <select className="form-input auth-page-form__input" value={role} onChange={(event) => setRole(event.target.value)}>
                   <option value="employee">Employee</option>
                   <option value="manager">Manager</option>
                 </select>
-              </label>
+              </Field>
             )}
           </div>
 
-          {/* Error Message */}
-          {error && (
-            <div 
-              className="mt-4 border p-3 text-sm animate-shake text-danger" 
-              style={{ borderColor: "#a32d2d", background: "#fcebeb", borderRadius: 8 }}
-            >
-              {error}
-            </div>
-          )}
+          {error && <div className="auth-page-form__error">{error}</div>}
 
-          {/* Submit Button */}
-          <button 
-            className="primary-button mt-6 w-full justify-center animate-slide-in-bottom" 
-            disabled={busy}
-            style={{ animationDelay: mode === "register" ? "0.55s" : "0.45s" }}
-          >
-            <FiLock size={16} /> {busy ? "Working..." : mode === "login" ? "Sign in" : "Create account"}
+          <button className="primary-button auth-page-form__submit" disabled={busy}>
+            <FiLock size={16} />
+            {busy ? "Working..." : mode === "login" ? "Sign in" : "Create account"}
           </button>
 
-          {/* Toggle Link */}
-          <p className="mt-4 text-center text-xs animate-fade-in" style={{ color: "#8ab8aa", animationDelay: "0.6s" }}>
+          <p className="auth-page-form__switch">
             {mode === "login" ? "Don't have an account? " : "Already have an account? "}
-            <button
-              type="button"
-              onClick={() => setMode(mode === "login" ? "register" : "login")}
-              className="font-medium transition-colors-smooth"
-              style={{ color: "#155E58" }}
-            >
+            <button type="button" onClick={() => setMode(mode === "login" ? "register" : "login")}> 
               {mode === "login" ? "Sign up" : "Sign in"}
             </button>
           </p>
         </form>
       </section>
     </main>
+  );
+}
+
+function Field({ label, icon, children }) {
+  return (
+    <label className="auth-page-form__field">
+      <span>{label}</span>
+      <div className="auth-page-form__field-control">
+        <div className="auth-page-form__field-icon">{icon}</div>
+        {children}
+      </div>
+    </label>
   );
 }

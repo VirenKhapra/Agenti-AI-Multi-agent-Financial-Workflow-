@@ -9,32 +9,20 @@ import UploadCenter from "./pages/UploadCenter.jsx";
 import SubmissionsPage from "./pages/SubmissionsPage.jsx";
 import ManagerDashboard from "./pages/ManagerDashboard.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
+import AuditPage from "./pages/AuditPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
 import AuthPage from "./pages/AuthPage.jsx";
 import "./styles.css";
+import LandingPage from "./pages/LandingPage.jsx";
 
-function HomeRedirect() {
-  const { isAuthenticated, user } = useAuth();
-  const location = useLocation();
 
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
-
-  const from = location.state?.from?.pathname;
-  if (from && from !== "/") return <Navigate to={from} replace />;
-  const home =
-    user?.role === "admin" ? "/admin" :
-    user?.role === "manager" ? "/manager" :
-    "/dashboard";
-
-  return <Navigate to={home} replace />;
-}
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<HomeRedirect />} />
+          <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<AuthPage />} />
           <Route element={<ProtectedRoute roles={["employee", "manager", "admin"]} />}>
             <Route element={<AppShell />}>
@@ -52,6 +40,7 @@ createRoot(document.getElementById("root")).render(
           <Route element={<ProtectedRoute roles={["admin"]} />}>
             <Route element={<AppShell />}>
               <Route path="/admin" element={<AdminDashboard />} />
+              <Route path="/audit" element={<AuditPage />} />
             </Route>
           </Route>
         </Routes>

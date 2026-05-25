@@ -1,380 +1,499 @@
 import React from "react";
-import { useCallback, useEffect, useState } from "react";
-import { FiActivity, FiCheckCircle, FiClock, FiCreditCard, FiDatabase, FiDollarSign, FiDownload, FiFilter, FiRefreshCw, FiXCircle } from "react-icons/fi";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { FiDownload, FiFilter, FiRefreshCw, FiX, FiChevronLeft, FiChevronRight } from "react-icons/fi";
+import {
+  Area, AreaChart, Bar, BarChart, CartesianGrid,
+  ResponsiveContainer, Tooltip, XAxis, YAxis
+} from "recharts";
+import { DayPicker } from "react-day-picker";
+import { format, addMonths, subMonths, addYears, subYears } from "date-fns";
+import "react-day-picker/dist/style.css";
 import { api } from "../api/client.js";
+import { useAuth } from "../auth/AuthContext.jsx";
 import { useWebSocket } from "../hooks/useWebSocket.js";
 
+// ─── date presets — "custom" now opens the calendar picker ───────────────────
+
+const DATE_PRESETS = [
+  { key: "this_month",    label: "This Month" },
+  { key: "six_months",    label: "6 Months" },
+  { key: "twelve_months", label: "12 Months" },
+  { key: "custom",        label: "Custom Range" }
+];
+
+const filterPillStyle = (active) => ({
+  background:  active ? "#6366F1" : "#F6F7FD",
+  color:       active ? "#fff"    : "#8A90A8",
+  borderColor: active ? "#6366F1" : "#D9DCF4",
+  border: "1px solid",
+  borderRadius: 10,
+  fontSize: 11,
+  fontWeight: 500,
+  padding: "7px 10px",
+  cursor: "pointer"
+});
+
+// ─── inline calendar styles scoped to .lf-rdp ────────────────────────────────
+
+const RDP_STYLES = `
+  .lf-rdp { --rdp-cell-size: 36px; margin: 0; }
+  .lf-rdp .rdp-months { display: flex; gap: 1.5rem; }
+  .lf-rdp .rdp-month { flex: 1; }
+  .lf-rdp .rdp-caption { display: flex; justify-content: center; padding: 0; margin-bottom: 1rem; }
+  .lf-rdp .rdp-nav { display: none; }
+  .lf-rdp .rdp-table { border-collapse: collapse; width: 100%; }
+  .lf-rdp .rdp-head_cell {
+    font-size: 10px; font-weight: 600; color: #9BA1B7;
+    text-align: center; padding: 4px;
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .lf-rdp .rdp-cell { text-align: center; padding: 0; }
+  .lf-rdp .rdp-day {
+    width: 36px; height: 36px; border: none;
+    background: transparent; cursor: pointer;
+    border-radius: 8px; font-size: 13px; color: #3D3F5C;
+  }
+  .lf-rdp .rdp-day:hover:not(.rdp-day_selected):not(.rdp-day_disabled) {
+    background-color: #EEF2FF;
+  }
+  .lf-rdp .rdp-day_selected {
+    background-color: #6366F1 !important;
+    color: white !important; font-weight: 500;
+  }
+  .lf-rdp .rdp-day_selected:hover { background-color: #4F46E5 !important; }
+  .lf-rdp .rdp-day_today { background-color: #F6F7FD; font-weight: 600; }
+  .lf-rdp .rdp-day_outside { color: #D9DCF4; }
+  .lf-rdp .rdp-day_disabled { color: #D9DCF4; cursor: not-allowed; }
+  .lf-rdp .rdp-day_range_start, .lf-rdp .rdp-day_range_end {
+    background-color: #6366F1 !important; color: white !important;
+  }
+  .lf-rdp .rdp-day_range_middle {
+    background-color: #EEF2FF !important; color: #3D3F5C !important;
+    border-radius: 0;
+  }
+  .lf-rdp .rdp-caption_label { font-size: 13px; font-weight: 600; color: #3D3F5C; }
+`;
+
+// ─── DateRangePicker — floats below the "Custom Range" pill ──────────────────
+
+function DateRangePicker({ onSelect, onClose }) {
+  const [range, setRange]   = useState(undefined);
+  const [month, setMonth]   = useState(new Date());
+  const pickerRef           = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target)) onClose();
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+
+  const handleApply = () => {
+    if (range?.from && range?.to) {
+      onSelect({ from: range.from, to: range.to });
+      onClose();
+    }
+  };
+
+  return (
+    <>
+      <style>{RDP_STYLES}</style>
+      <div
+        ref={pickerRef}
+        style={{
+          position: "absolute",
+          top: "calc(100% + 8px)",
+          left: 0,
+          background: "#fff",
+          border: "1px solid #D9DCF4",
+          borderRadius: 14,
+          boxShadow: "0 8px 32px rgba(99,102,241,0.13)",
+          padding: 20,
+          zIndex: 100,
+          minWidth: 560,
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#3D3F5C" }}>Select Date Range</span>
+          <button
+            onClick={onClose}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "#8A90A8", display: "flex", alignItems: "center", padding: 4, borderRadius: 6 }}
+          >
+            <FiX size={14} />
+          </button>
+        </div>
+
+        {/* Month navigation */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <div style={{ display: "flex", gap: 4 }}>
+            <NavBtn onClick={() => setMonth(subYears(month, 1))}  title="Prev year">
+              <FiChevronLeft size={12} /><FiChevronLeft size={12} style={{ marginLeft: -5 }} />
+            </NavBtn>
+            <NavBtn onClick={() => setMonth(subMonths(month, 1))} title="Prev month">
+              <FiChevronLeft size={12} />
+            </NavBtn>
+          </div>
+
+          <span style={{ fontSize: 12, fontWeight: 600, color: "#3D3F5C" }}>
+            {format(month, "MMMM yyyy")}
+          </span>
+
+          <div style={{ display: "flex", gap: 4 }}>
+            <NavBtn onClick={() => setMonth(addMonths(month, 1))} title="Next month">
+              <FiChevronRight size={12} />
+            </NavBtn>
+            <NavBtn onClick={() => setMonth(addYears(month, 1))}  title="Next year">
+              <FiChevronRight size={12} /><FiChevronRight size={12} style={{ marginLeft: -5 }} />
+            </NavBtn>
+          </div>
+        </div>
+
+        {/* Calendar */}
+        <div className="lf-rdp">
+          <DayPicker
+            mode="range"
+            selected={range}
+            onSelect={setRange}
+            month={month}
+            onMonthChange={setMonth}
+            numberOfMonths={2}
+            disabled={{ after: new Date() }}
+          />
+        </div>
+
+        {/* Footer */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 16, paddingTop: 14, borderTop: "1px solid #E2E5F5" }}>
+          <span style={{ fontSize: 11, color: "#8A90A8" }}>
+            {range?.from && range?.to
+              ? `${format(range.from, "MMM dd, yyyy")} – ${format(range.to, "MMM dd, yyyy")}`
+              : "Pick a start and end date"}
+          </span>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={onClose}
+              className="secondary-button"
+              style={{ padding: "6px 14px", fontSize: 12 }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleApply}
+              disabled={!range?.from || !range?.to}
+              style={{
+                padding: "6px 14px", fontSize: 12, fontWeight: 600,
+                background: range?.from && range?.to ? "#6366F1" : "#D9DCF4",
+                color: "#fff", border: "none", borderRadius: 9, cursor: range?.from && range?.to ? "pointer" : "not-allowed"
+              }}
+            >
+              Apply
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function NavBtn({ onClick, title, children }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      style={{ display: "inline-flex", alignItems: "center", padding: "4px 6px", background: "#F6F7FD", border: "1px solid #D9DCF4", borderRadius: 6, cursor: "pointer", color: "#8A90A8" }}
+      onMouseEnter={e => { e.currentTarget.style.background = "#EEF2FF"; e.currentTarget.style.color = "#6366F1"; }}
+      onMouseLeave={e => { e.currentTarget.style.background = "#F6F7FD"; e.currentTarget.style.color = "#8A90A8"; }}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ─── main Dashboard ───────────────────────────────────────────────────────────
+
 export default function Dashboard() {
-  const [data, setData] = useState(null);
+  const { user } = useAuth();
+  const [data, setData]               = useState(null);
   const [showFilters, setShowFilters] = useState(false);
-  const [filters, setFilters] = useState({ status: "", dateFrom: "", dateTo: "" });
+  const [datePreset, setDatePreset]   = useState("six_months");
+  const [showPicker, setShowPicker]   = useState(false);
+  const [customLabel, setCustomLabel] = useState(null); // e.g. "Apr 01 – May 25"
+  const [filters, setFilters]         = useState(() => ({
+    status: "",
+    ...datesForPreset("six_months")
+  }));
 
   const loadKpis = useCallback(async () => {
     const params = new URLSearchParams();
-    if (filters.status) params.set("status", filters.status);
+    if (filters.status)   params.set("status",    filters.status);
     if (filters.dateFrom) params.set("date_from", `${filters.dateFrom}T00:00:00`);
-    if (filters.dateTo) params.set("date_to", `${filters.dateTo}T23:59:59`);
-    const response = await api.get(`/analytics/kpis${params.toString() ? `?${params.toString()}` : ""}`);
+    if (filters.dateTo)   params.set("date_to",   `${filters.dateTo}T23:59:59`);
+    const response = await api.get(
+      `/analytics/kpis${params.toString() ? `?${params.toString()}` : ""}`
+    );
     setData(response.data);
   }, [filters]);
 
-  useEffect(() => {
-    loadKpis();
-  }, [loadKpis]);
+  useEffect(() => { loadKpis(); }, [loadKpis]);
 
-  useWebSocket("dashboard", useCallback((event) => {
-    if (event.event === "dashboard_refresh") loadKpis();
-  }, [loadKpis]));
+  useWebSocket(
+    "dashboard",
+    useCallback(
+      (event) => { if (event.event === "dashboard_refresh") loadKpis(); },
+      [loadKpis]
+    )
+  );
 
   const totals = data?.totals || {};
-  const workflowAmounts = data?.workflow_amounts || {};
-  const formatMoney = (value) => `INR ${Number(value || 0).toLocaleString()}`;
-  const trend = data?.upload_trends?.map((item) => ({
-    day: new Date(item.day).toLocaleDateString(),
-    uploads: item.uploads,
-    approved: Math.max(0, Math.round(item.uploads * 0.78)),
-    declined: Math.max(0, Math.round(item.uploads * 0.12))
-  })) || [];
-  const recentUploads = data?.recent_uploads || [];
-  const transactions = data?.last_transactions || [];
-  const snapshots = data?.kpi_snapshots || [];
-  const transactionTrend = data?.transaction_amount_trend?.map((item) => ({
-    date: new Date(item.date).toLocaleDateString(),
-    amount: Number(item.amount || 0)
-  })) || [];
-  const latestUpload = data?.latest_upload;
+
+  const trend =
+    data?.upload_trends?.map((item) => ({
+      day:      new Date(item.day).toLocaleDateString(),
+      uploads:  item.uploads,
+      approved: item.approved  || 0,
+      declined: item.declined  || 0
+    })) || [];
+
+  const transactionTrend =
+    data?.transaction_amount_trend?.map((item) => ({
+      date:   new Date(item.date).toLocaleDateString(),
+      amount: Number(item.amount || 0)
+    })) || [];
+
+  const kpiCards = [
+    { label: "IN REVIEW",    value: totals.pending   ?? 0 },
+    { label: "APPROVED",     value: totals.approved  ?? 0 },
+    { label: "TOTAL AMOUNT", value: `₹${Number(totals.total_amount ?? 0).toLocaleString("en-IN")}` },
+    { label: "REJECTED",     value: totals.declined  ?? 0 },
+    { label: "COMPLETED",    value: totals.reviewed  ?? 0 }
+  ];
+
+  const amountCards = [
+    { label: "TRANSACTION INITIATED", amount: Number(totals.transaction_initiated_amount ?? totals.total_amount ?? 0), delta: `${Number(totals.uploads ?? 0).toLocaleString("en-IN")} total` },
+    { label: "PENDING",               amount: Number(totals.pending_amount ?? 0),                                      delta: "Awaiting review" },
+    { label: "SUCCESSFUL",            amount: Number(totals.approved_amount ?? totals.cash ?? 0),                      delta: `${Number(totals.approval_rate ?? 0).toFixed(1)}% rate` },
+    { label: "FAILED",                amount: Number(totals.declined_amount ?? 0),                                     delta: "Needs attention" }
+  ];
 
   function updateFilter(name, value) {
-    setFilters((current) => ({ ...current, [name]: value }));
+    setFilters((cur) => ({ ...cur, [name]: value }));
   }
 
-  function clearFilters() {
-    setFilters({ status: "", dateFrom: "", dateTo: "" });
+  function selectDatePreset(preset) {
+    setDatePreset(preset);
+    setShowPicker(false);
+    setCustomLabel(null);
+    if (preset !== "custom") {
+      setFilters((cur) => ({ ...cur, ...datesForPreset(preset) }));
+    } else {
+      setShowPicker(true);
+    }
+  }
+
+  function handleCustomRange({ from, to }) {
+    const dateFrom = toDateInputValue(from);
+    const dateTo   = toDateInputValue(to);
+    setFilters((cur) => ({ ...cur, dateFrom, dateTo }));
+    setCustomLabel(`${format(from, "MMM dd")} – ${format(to, "MMM dd, yyyy")}`);
   }
 
   function exportDashboardCsv() {
-    const rows = [
-      ["Section", "Name", "Value", "Detail"],
-      ["Totals", "Total Uploads", totals.uploads || 0, ""],
-      ["Totals", "Approved", totals.approved || 0, ""],
-      ["Totals", "Pending", totals.pending || 0, ""],
-      ["Totals", "Rows Processed", totals.rows || 0, ""],
-      ["Totals", "Approved Amount", totals.approved_amount || 0, "INR"],
-      ["Totals", "Cash Collected", totals.cash || 0, "INR"],
-      ...recentUploads.map((upload) => ["Recent Upload", upload.filename, upload.status, `${upload.rows} rows`]),
-      ...transactions.map((txn) => ["Transaction", txn.transaction_id || `Row ${txn.row_index}`, txn.amount, txn.status || ""]),
-      ...snapshots.map((snapshot) => ["KPI Snapshot", snapshot.metric_name, snapshot.metric_value, snapshot.captured_at])
-    ];
-    const csv = rows
-      .map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll("\"", "\"\"")}"`).join(","))
-      .join("\n");
+    const rows = [["Metric", "Value"], ...kpiCards.map((c) => [c.label, c.value])];
+    const csv  = rows.map((r) => r.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `ledgerflow-dashboard-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href = url;
+    a.download = `ledgerflow-dashboard-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
     URL.revokeObjectURL(url);
   }
 
   return (
-    <div className="space-y-5 app-page">
-      <section className="flex flex-wrap items-center justify-between gap-3 animate-slide-in-top">
+    <div className="lf-analytics-page">
+      {/* Header */}
+      <section className="lf-analytics-page__header">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-ink">Analytics Overview</h1>
-          <p className="text-sm text-muted">Live upload, approval, and KPI activity across the platform.</p>
+          <h1>Analytics Overview</h1>
+          <p>
+            {user?.role === "employee"
+              ? "Monitor your upload performance and key metrics"
+              : "Monitor your transaction performance and key metrics"}
+          </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button className="secondary-button" onClick={() => setShowFilters((value) => !value)}><FiFilter /> Filter</button>
-          <button className="secondary-button" onClick={exportDashboardCsv}><FiDownload /> Export</button>
-          <button className="icon-button transition-all-smooth hover:rotate-180" onClick={loadKpis} title="Refresh analytics"><FiRefreshCw /></button>
+        <div className="lf-analytics-page__actions">
+          <button className="secondary-button" onClick={() => setShowFilters((v) => !v)}>
+            <FiFilter /> Filter
+          </button>
+          <button className="secondary-button" onClick={exportDashboardCsv}>
+            <FiDownload /> Export
+          </button>
+          <button className="lf-reference-icon-button" onClick={loadKpis} type="button">
+            <FiRefreshCw size={17} />
+          </button>
         </div>
       </section>
 
+      {/* Filters */}
       {showFilters && (
-        <section className="elevated-panel p-4 animate-slide-in-top">
-          <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
-            <label className="block">
-              <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-muted">Status</span>
-              <select className="form-input" value={filters.status} onChange={(event) => updateFilter("status", event.target.value)}>
-                <option value="">All statuses</option>
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="declined">Declined</option>
-                <option value="reupload_requested">Re-upload requested</option>
-              </select>
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-muted">From</span>
-              <input className="form-input" type="date" value={filters.dateFrom} onChange={(event) => updateFilter("dateFrom", event.target.value)} />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-muted">To</span>
-              <input className="form-input" type="date" value={filters.dateTo} onChange={(event) => updateFilter("dateTo", event.target.value)} />
-            </label>
-            <div className="flex items-end">
-              <button className="secondary-button w-full" onClick={clearFilters}>Clear</button>
+        <section className="lf-analytics-filters">
+          <label>
+            <span>Transaction Status</span>
+            <select
+              className="form-input"
+              value={filters.status}
+              onChange={(e) => updateFilter("status", e.target.value)}
+            >
+              <option value="">All statuses</option>
+              <option value="Initiated">Initiated</option>
+              <option value="Pending">Pending</option>
+              <option value="Successful">Successful</option>
+              <option value="Failed">Failed</option>
+            </select>
+          </label>
+
+          <div>
+            <span>Transaction Date</span>
+            {/* Pill row + floating picker */}
+            <div style={{ position: "relative", display: "inline-block" }}>
+              <div className="lf-analytics-filters__pills">
+                {DATE_PRESETS.map((p) => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    style={filterPillStyle(datePreset === p.key)}
+                    onClick={() => selectDatePreset(p.key)}
+                  >
+                    {p.key === "custom" && customLabel ? customLabel : p.label}
+                  </button>
+                ))}
+              </div>
+
+              {showPicker && (
+                <DateRangePicker
+                  onSelect={handleCustomRange}
+                  onClose={() => setShowPicker(false)}
+                />
+              )}
             </div>
           </div>
+
+          {/* Legacy manual date inputs — visible only when custom is active but picker is closed */}
+          {datePreset === "custom" && !showPicker && customLabel && (
+            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              <label>
+                <span>From</span>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={filters.dateFrom}
+                  onChange={(e) => updateFilter("dateFrom", e.target.value)}
+                />
+              </label>
+              <label>
+                <span>To</span>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={filters.dateTo}
+                  onChange={(e) => updateFilter("dateTo", e.target.value)}
+                />
+              </label>
+            </div>
+          )}
         </section>
       )}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
-        <div className="animate-stagger-in-1" style={{ animationDelay: "0.1s" }}>
-          <Kpi icon={FiDatabase} label="Total Uploads" value={totals.uploads || 0} delta={12} tone="aqua" />
-        </div>
-        <div className="animate-stagger-in-2" style={{ animationDelay: "0.15s" }}>
-          <Kpi icon={FiCheckCircle} label="Approved" value={totals.approved || 0} delta={8} tone="green" />
-        </div>
-        <div className="animate-stagger-in-3" style={{ animationDelay: "0.2s" }}>
-          <Kpi icon={FiClock} label="Pending Review" value={totals.pending || 0} delta={0} tone="amber" />
-        </div>
-        <div className="animate-stagger-in-4" style={{ animationDelay: "0.25s" }}>
-          <Kpi icon={FiActivity} label="Rows Processed" value={Number(totals.rows || 0).toLocaleString()} delta={6} tone="teal" />
-        </div>
-        <div className="animate-stagger-in-5" style={{ animationDelay: "0.3s" }}>
-          <Kpi icon={FiDollarSign} label="Approved Amount" value={formatMoney(totals.approved_amount)} delta={14} tone="brand" />
-        </div>
-        <div className="animate-fade-in-scale" style={{ animationDelay: "0.35s" }}>
-          <Kpi icon={FiCreditCard} label="Cash Collected" value={formatMoney(totals.cash)} delta={14} tone="green" />
-        </div>
+      {/* KPI Cards */}
+      <section className="lf-kpi-grid" style={{ display: "grid", gridTemplateColumns: `repeat(${kpiCards.length}, 1fr)`, gap: 16 }}>
+        {kpiCards.map((card) => (
+          <div key={card.label} className="lf-kpi-card">
+            <div className="lf-kpi-card__label">{card.label}</div>
+            <div className="lf-kpi-card__value">{card.value}</div>
+          </div>
+        ))}
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div className="animate-fade-in-scale" style={{ animationDelay: "0.4s" }}>
-          <AmountTile label="Transaction Initiated" value={workflowAmounts.initiated} detail="All uploaded transaction amount" tone="border-[#BFE9DF] bg-[#E7F5F1] text-accent" />
-        </div>
-        <div className="animate-fade-in-scale" style={{ animationDelay: "0.45s" }}>
-          <AmountTile label="Pending Amount" value={workflowAmounts.pending} detail="Waiting for manager review" tone="border-amber-200 bg-amber-50/60 text-warning" />
-        </div>
-        <div className="animate-fade-in-scale" style={{ animationDelay: "0.5s" }}>
-          <AmountTile label="Approved Amount" value={workflowAmounts.approved} detail="Approved upload transactions" tone="border-emerald-200 bg-emerald-50/60 text-success" />
-        </div>
-        <div className="animate-fade-in-scale" style={{ animationDelay: "0.55s" }}>
-          <AmountTile label="Declined Amount" value={workflowAmounts.declined} detail="Rejected upload transactions" tone="border-red-200 bg-red-50/60 text-danger" />
-        </div>
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-[1.4fr_1fr]">
-        <div className="elevated-panel p-5 animate-fade-in-scale" style={{ animationDelay: "0.6s" }}>
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-base font-bold text-ink">Upload Activity</h2>
-              <p className="text-sm text-muted">Rolling submission and approval trend</p>
-            </div>
-            <div className="flex gap-4 text-xs font-semibold text-muted">
-              <Legend color="bg-accent" label="Uploads" />
-              <Legend color="bg-success" label="Approved" />
-              <Legend color="bg-danger" label="Declined" />
+      {/* Amount Cards */}
+      <section className="lf-amount-grid">
+        {amountCards.map((card) => (
+          <div key={card.label} className="lf-amount-card">
+            <div className="lf-kpi-card__label">{card.label}</div>
+            <div className="lf-amount-card__row">
+              <div className="lf-kpi-card__value">
+                ₹{Math.round(card.amount).toLocaleString("en-IN")}
+              </div>
+              <div className="lf-kpi-card__delta">{card.delta}</div>
             </div>
           </div>
-          <div className="mt-4 h-80">
+        ))}
+      </section>
+
+      {/* Charts */}
+      <section className="lf-chart-grid">
+        <div className="lf-chart-card">
+          <div className="lf-chart-card__head">
+            <h2>Activity Trend</h2>
+            <p>Daily transaction volume over time</p>
+          </div>
+          <div className="lf-chart-card__body" style={{ height: 280 }}>
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={trend}>
                 <defs>
-                  <linearGradient id="uploadFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3ABFB1" stopOpacity={0.22} />
-                    <stop offset="95%" stopColor="#3ABFB1" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="approvedFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#155E58" stopOpacity={0.16} />
-                    <stop offset="95%" stopColor="#155E58" stopOpacity={0} />
+                  <linearGradient id="lfChartFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor="#6366F1" stopOpacity={0.28} />
+                    <stop offset="95%" stopColor="#6366F1" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#EDF1EC" vertical={false} />
-                <XAxis dataKey="day" tick={{ fontSize: 12 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                <Tooltip contentStyle={{ borderRadius: 10, borderColor: "#D9E3DD", background: "#fff" }} />
-                <Area type="monotone" dataKey="uploads" stroke="#3ABFB1" fill="url(#uploadFill)" strokeWidth={2} />
-                <Area type="monotone" dataKey="approved" stroke="#155E58" fill="url(#approvedFill)" strokeWidth={2} />
-                <Area type="monotone" dataKey="declined" stroke="#A33A32" fill="none" strokeDasharray="4 4" strokeWidth={2} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#E2E5F5" vertical={false} />
+                <XAxis dataKey="day"  tick={{ fontSize: 11, fill: "#9BA1B7" }} />
+                <YAxis               tick={{ fontSize: 11, fill: "#9BA1B7" }} />
+                <Tooltip />
+                <Area type="monotone" dataKey="uploads" stroke="#6366F1" fill="url(#lfChartFill)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
-        <div className="elevated-panel p-5 animate-fade-in-scale" style={{ animationDelay: "0.65s" }}>
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-bold text-ink">Recent Uploads</h2>
-              <p className="text-sm text-muted">Latest submissions</p>
-            </div>
-            <span className="chip">{recentUploads.length} items</span>
-          </div>
-          <div className="mt-4 space-y-3">
-            {recentUploads.map((upload, index) => (
-              <div 
-                key={upload.id} 
-                className="flex items-center justify-between gap-3 border border-line bg-surface-alt p-3 transition-all-smooth hover:bg-white hover:shadow-soft" 
-                style={{ borderRadius: 8, animation: `staggerIn 0.4s ease-out ${0.7 + index * 0.05}s both` }}
-              >
-                <div className="min-w-0">
-                  <div className="mono truncate text-xs font-semibold text-accent">{upload.filename}</div>
-                  <div className="text-xs text-muted">{upload.rows} rows</div>
-                </div>
-                <StatusBadge status={upload.status} />
-              </div>
-            ))}
-            {!recentUploads.length && <EmptyState label="No uploads yet" />}
-          </div>
-        </div>
-      </section>
 
-      <section className="grid gap-5 xl:grid-cols-[1fr_1.2fr]">
-        <div className="elevated-panel p-5 animate-fade-in-scale" style={{ animationDelay: "0.8s" }}>
-          <h2 className="text-base font-bold text-ink">Revenue / Transaction Analytics</h2>
-          <p className="text-sm text-muted">
-            Amount by transaction date from {latestUpload?.filename || "the latest uploaded file"}.
-          </p>
-          <div className="mt-5 h-64">
+        <div className="lf-chart-card">
+          <div className="lf-chart-card__head">
+            <h2>Revenue / Expenses</h2>
+            <p>Monthly comparison breakdown</p>
+          </div>
+          <div className="lf-chart-card__body" style={{ height: 280 }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={transactionTrend}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#EDF1EC" vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip contentStyle={{ borderRadius: 10, borderColor: "#D9E3DD", background: "#fff" }} />
-                <Bar dataKey="amount" fill="#1E8278" radius={[6, 6, 0, 0]} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#E2E5F5" vertical={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#9BA1B7" }} />
+                <YAxis               tick={{ fontSize: 11, fill: "#9BA1B7" }} />
+                <Tooltip formatter={(v) => [`₹${Number(v).toLocaleString("en-IN")}`, "Amount"]} />
+                <Bar dataKey="amount" fill="#6366F1" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
-        <div className="elevated-panel overflow-hidden animate-fade-in-scale" style={{ animationDelay: "0.85s" }}>
-          <div className="flex items-center justify-between border-b border-line p-5">
-            <div>
-              <h2 className="text-base font-bold text-ink">Last 10 Transactions</h2>
-              <p className="text-sm text-muted">Last rows from the most recent uploaded file</p>
-            </div>
-            <button className="secondary-button"><FiDownload /> Export</button>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase text-muted">
-                <tr>
-                  <th className="px-4 py-3">Transaction</th>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Customer</th>
-                  <th className="px-4 py-3">Merchant</th>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">Method</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Amount</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {transactions.map((txn, index) => (
-                  <tr 
-                    key={`${txn.upload_id}-${txn.row_index}`} 
-                    className="hover:bg-slate-50 transition-colors-smooth"
-                    style={{ animation: `staggerIn 0.3s ease-out ${0.9 + index * 0.04}s both` }}
-                  >
-                    <td className="mono px-4 py-3 text-xs font-semibold text-accent">{txn.transaction_id || `Row ${txn.row_index}`}</td>
-                    <td className="px-4 py-3 text-muted">{formatDate(txn.transaction_date)}</td>
-                    <td className="px-4 py-3 text-ink">{txn.customer_name || "-"}</td>
-                    <td className="px-4 py-3 text-muted">{txn.merchant_name || "-"}</td>
-                    <td className="px-4 py-3 text-muted">{txn.transaction_type || "-"}</td>
-                    <td className="px-4 py-3 text-muted">{txn.payment_method || "-"}</td>
-                    <td className="px-4 py-3"><StatusBadge status={String(txn.status || "unknown").toLowerCase()} /></td>
-                    <td className="mono px-4 py-3 font-semibold text-ink">{formatMoney(txn.amount)}</td>
-                  </tr>
-                ))}
-                {!transactions.length && (
-                  <tr><td colSpan="8"><EmptyState label="No transactions in the latest upload" /></td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
       </section>
-
-      {snapshots.length > 0 && (
-        <section className="elevated-panel p-5 animate-fade-in-scale" style={{ animationDelay: "0.9s" }}>
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-bold text-ink">KPI Snapshots</h2>
-              <p className="text-sm text-muted">Recent persisted metrics from approval events</p>
-            </div>
-            <span className="chip">{snapshots.length} items</span>
-          </div>
-          <div className="grid gap-3 md:grid-cols-3">
-            {snapshots.slice(0, 6).map((snapshot, index) => (
-              <div 
-                key={`${snapshot.metric_name}-${snapshot.captured_at}-${index}`} 
-                className="border border-line bg-slate-50 p-3 transition-all-smooth hover:shadow-soft hover:bg-white" 
-                style={{ borderRadius: 8, animation: `staggerIn 0.4s ease-out ${0.95 + index * 0.05}s both` }}
-              >
-                <div className="text-xs font-bold uppercase tracking-wide text-muted">{snapshot.metric_name.replaceAll("_", " ")}</div>
-                <div className="mono mt-2 text-lg font-semibold text-ink">{Number(snapshot.metric_value || 0).toLocaleString()}</div>
-                <div className="mt-1 text-xs text-muted">{new Date(snapshot.captured_at).toLocaleString()}</div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
     </div>
   );
 }
 
-function formatDate(value) {
-  if (!value) return "-";
-  return new Date(value).toLocaleDateString();
+// ─── helpers ──────────────────────────────────────────────────────────────────
+
+function datesForPreset(preset) {
+  const today = new Date();
+  const end   = toDateInputValue(today);
+  if (preset === "this_month")
+    return { dateFrom: toDateInputValue(new Date(today.getFullYear(), today.getMonth(), 1)), dateTo: end };
+  if (preset === "six_months")
+    return { dateFrom: toDateInputValue(new Date(today.getFullYear(), today.getMonth() - 5, 1)), dateTo: end };
+  if (preset === "twelve_months")
+    return { dateFrom: toDateInputValue(new Date(today.getFullYear(), today.getMonth() - 11, 1)), dateTo: end };
+  return { dateFrom: "", dateTo: "" };
 }
 
-function AmountTile({ label, value, detail, tone }) {
-  return (
-    <div className={`border p-4 transition-all-smooth hover:shadow-soft hover:-translate-y-1 ${tone}`} style={{ borderRadius: 8 }}>
-      <div className="text-xs font-bold uppercase tracking-wide">{label}</div>
-      <div className="mono mt-3 text-xl font-semibold text-ink">INR {Number(value || 0).toLocaleString()}</div>
-      <div className="mt-1 text-xs text-muted">{detail}</div>
-    </div>
-  );
-}
-
-function Kpi({ icon: Icon, label, value, delta, tone }) {
-  const tones = {
-    aqua: "bg-highlight-bg text-accent",
-    brand: "bg-[#D5F1EA] text-brand",
-    green: "bg-highlight-bg text-success",
-    amber: "bg-amber-50 text-warning",
-    teal: "bg-[#D5F1EA] text-brand",
-    indigo: "bg-[#E7F5F1] text-accent"
-  };
-  return (
-    <div className="elevated-panel fintech-card p-4 transition-all-smooth hover:-translate-y-1">
-      <div className="flex items-center justify-between">
-        <div className="text-xs font-bold uppercase tracking-wide text-muted">{label}</div>
-        <div className={`flex h-9 w-9 items-center justify-center ${tones[tone]} transition-all-smooth`} style={{ borderRadius: 8 }}>
-          <Icon />
-        </div>
-      </div>
-      <div className="mono mt-4 text-2xl font-semibold text-ink">{value}</div>
-      <div className="mt-2 flex items-center gap-1 text-xs">
-        {delta > 0 && <span className="font-bold text-success">+{delta}%</span>}
-        {delta < 0 && <span className="font-bold text-danger">{delta}%</span>}
-        {delta === 0 && <FiXCircle className="text-warning" />}
-        <span className="text-muted">{delta === 0 ? "in queue now" : "vs last week"}</span>
-      </div>
-    </div>
-  );
-}
-
-function StatusBadge({ status }) {
-  return (
-    <span className={`status-badge status-${status} transition-all-smooth`}>
-      <span className="status-dot bg-current" />
-      {status}
-    </span>
-  );
-}
-
-function Legend({ color, label }) {
-  return (
-    <span className="inline-flex items-center gap-2">
-      <span className={`h-0.5 w-5 rounded-full ${color}`} />
-      {label}
-    </span>
-  );
-}
-
-function EmptyState({ label }) {
-  return <div className="py-8 text-center text-sm text-muted">{label}</div>;
+function toDateInputValue(date) {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 10);
 }

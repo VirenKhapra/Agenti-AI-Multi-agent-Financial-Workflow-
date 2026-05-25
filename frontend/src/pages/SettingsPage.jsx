@@ -1,6 +1,6 @@
 import React from "react";
 import { useEffect, useState } from "react";
-import { FiCheckCircle, FiLock, FiSave, FiShield, FiUser } from "react-icons/fi";
+import { FiCheckCircle } from "react-icons/fi";
 import { api } from "../api/client.js";
 import { useAuth } from "../auth/AuthContext.jsx";
 
@@ -74,119 +74,69 @@ export default function SettingsPage() {
     }
   }
 
-  function updatePasswordField(name, value) {
-    setPasswords((current) => ({ ...current, [name]: value }));
+  function updatePasswordField(field, value) {
+    setPasswords((current) => ({ ...current, [field]: value }));
   }
 
   return (
-    <div className="app-page settings-page">
-      <section className="settings-header">
+    <div className="lf-settings-page">
+      <section className="lf-settings-header">
         <div>
           <h1>Settings</h1>
-          <p>Manage your profile identity and account security.</p>
-        </div>
-        <div className="settings-security-chip">
-          <FiShield />
-          Protected account controls
+          <p>Manage your account and application preferences</p>
         </div>
       </section>
 
-      <section className="settings-grid">
-        <form className="elevated-panel fintech-card settings-card" onSubmit={saveProfile}>
-          <div className="settings-card-title">
-            <div className="settings-icon">
-              <FiUser />
-            </div>
-            <div>
-              <h2>Account Profile</h2>
-              <p>Update the name shown across LedgerFlow.</p>
-            </div>
-          </div>
+      <section className="lf-settings-grid">
+        <form className="lf-settings-card" onSubmit={saveProfile}>
+          <div className="lf-settings-card__title">Account Details</div>
 
-          <div className="settings-readonly-row">
-            <span>Email</span>
-            <strong>{user?.email || "-"}</strong>
-          </div>
-          <div className="settings-readonly-row">
+          <label className="lf-settings-field">
+            <span>Full Name</span>
+            <input className="form-input" value={name} onChange={(event) => setName(event.target.value)} minLength={2} maxLength={120} required placeholder="Your full name" />
+          </label>
+
+          <label className="lf-settings-field">
+            <span>Email Address</span>
+            <input className="form-input" value={user?.email || ""} readOnly />
+          </label>
+
+          <label className="lf-settings-field">
             <span>Role</span>
-            <strong>{user?.role || "-"}</strong>
-          </div>
-
-          <label className="settings-field">
-            <span>Account name</span>
-            <input
-              className="form-input"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              minLength={2}
-              maxLength={120}
-              required
-              placeholder="Your full name"
-            />
+            <input className="form-input" value={user?.role ? `${user.role.charAt(0).toUpperCase()}${user.role.slice(1)}` : "-"} readOnly />
           </label>
 
           {profileError && <Message tone="error" text={profileError} />}
           {profileMessage && <Message tone="success" text={profileMessage} />}
 
-          <button className="primary-button settings-action" disabled={profileBusy || name.trim() === user?.name}>
-            <FiSave /> {profileBusy ? "Saving..." : "Save profile"}
+          <button className="lf-settings-submit" disabled={profileBusy || name.trim() === user?.name} type="submit">
+            {profileBusy ? "Saving..." : "Save Changes"}
           </button>
         </form>
 
-        <form className="elevated-panel fintech-card settings-card" onSubmit={changePassword}>
-          <div className="settings-card-title">
-            <div className="settings-icon">
-              <FiLock />
-            </div>
-            <div>
-              <h2>Password</h2>
-              <p>Use your current password to confirm this change.</p>
-            </div>
-          </div>
+        <form className="lf-settings-card" onSubmit={changePassword}>
+          <div className="lf-settings-card__title">Password</div>
 
-          <label className="settings-field">
-            <span>Current password</span>
-            <input
-              className="form-input"
-              type="password"
-              value={passwords.currentPassword}
-              onChange={(event) => updatePasswordField("currentPassword", event.target.value)}
-              required
-              autoComplete="current-password"
-            />
+          <label className="lf-settings-field">
+            <span>Current Password</span>
+            <input className="form-input" type="password" value={passwords.currentPassword} onChange={(event) => updatePasswordField("currentPassword", event.target.value)} required autoComplete="current-password" />
           </label>
 
-          <label className="settings-field">
-            <span>New password</span>
-            <input
-              className="form-input"
-              type="password"
-              value={passwords.newPassword}
-              onChange={(event) => updatePasswordField("newPassword", event.target.value)}
-              minLength={8}
-              required
-              autoComplete="new-password"
-            />
+          <label className="lf-settings-field">
+            <span>New Password</span>
+            <input className="form-input" type="password" value={passwords.newPassword} onChange={(event) => updatePasswordField("newPassword", event.target.value)} minLength={8} required autoComplete="new-password" />
           </label>
 
-          <label className="settings-field">
-            <span>Confirm new password</span>
-            <input
-              className="form-input"
-              type="password"
-              value={passwords.confirmPassword}
-              onChange={(event) => updatePasswordField("confirmPassword", event.target.value)}
-              minLength={8}
-              required
-              autoComplete="new-password"
-            />
+          <label className="lf-settings-field">
+            <span>Confirm Password</span>
+            <input className="form-input" type="password" value={passwords.confirmPassword} onChange={(event) => updatePasswordField("confirmPassword", event.target.value)} minLength={8} required autoComplete="new-password" />
           </label>
 
           {passwordError && <Message tone="error" text={passwordError} />}
           {passwordMessage && <Message tone="success" text={passwordMessage} />}
 
-          <button className="primary-button settings-action" disabled={passwordBusy}>
-            <FiLock /> {passwordBusy ? "Changing..." : "Change password"}
+          <button className="lf-settings-submit" disabled={passwordBusy} type="submit">
+            {passwordBusy ? "Updating..." : "Update Password"}
           </button>
         </form>
       </section>
@@ -196,8 +146,8 @@ export default function SettingsPage() {
 
 function Message({ tone, text }) {
   return (
-    <div className={`settings-message settings-message-${tone}`}>
-      {tone === "success" && <FiCheckCircle />}
+    <div className={`lf-settings-message lf-settings-message-${tone}`}>
+      {tone === "success" && <FiCheckCircle size={16} />}
       <span>{text}</span>
     </div>
   );

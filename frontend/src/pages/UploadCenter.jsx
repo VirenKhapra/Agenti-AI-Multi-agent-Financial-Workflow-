@@ -1,21 +1,14 @@
 import React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  FiActivity,
   FiAlertCircle,
-  FiBarChart2,
-  FiCheck,
   FiCheckCircle,
   FiClock,
-  FiColumns,
   FiDownload,
   FiFileText,
-  FiChevronLeft,
-  FiChevronRight,
-  FiRefreshCw,
-  FiSend,
-  FiShield,
+  FiFolder,
   FiSearch,
+  FiSliders,
   FiUpload,
   FiUploadCloud,
   FiX
@@ -24,52 +17,25 @@ import { api } from "../api/client.js";
 import { useWebSocket } from "../hooks/useWebSocket.js";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const FILTERS = ["All", "Payment", "Debit", "Credit", "Transfer", "Refund"];
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 5;
+const ACCEPTED_EXTENSIONS = [".xlsx", ".csv", ".json"];
 
-const TABLE_COLUMNS = [
-  { key: "merchant_name", label: "Merchant", width: "18%" },
-  { key: "transaction_id", label: "Transaction ID", width: "14%" },
-  { key: "transaction_date", label: "Date", width: "12%" },
-  { key: "amount", label: "Amount", width: "11%" },
-  { key: "transaction_type", label: "Type", width: "13%" },
-  { key: "payment_method", label: "Method", width: "14%" },
-  { key: "status", label: "Status", width: "12%" },
-  { key: "invoice_id", label: "Invoice", width: "11%" }
-];
-
-const TYPE_STYLES = {
-  Payment: { bg: "#E7F5F1", color: "#155E58" },
-  Debit: { bg: "#faeeda", color: "#854f0b" },
-  Credit: { bg: "#D5F1EA", color: "#1E8278" },
-  Transfer: { bg: "#EEF8F5", color: "#277A73" },
-  Refund: { bg: "#fbeaf0", color: "#993556" }
-};
-
-const STATUS_STYLES = {
-  Successful: { bg: "#E7F5F1", color: "#155E58" },
-  Pending: { bg: "#faeeda", color: "#854f0b" },
-  Failed: { bg: "#fcebeb", color: "#a32d2d" },
-  Initiated: { bg: "#EEF8F5", color: "#277A73" },
-  pending: { bg: "#faeeda", color: "#854f0b" },
-  approved: { bg: "#E7F5F1", color: "#155E58" },
-  declined: { bg: "#fcebeb", color: "#a32d2d" },
-  reupload_requested: { bg: "#EEF8F5", color: "#277A73" }
-};
-
-const MERCHANTS = {
-  Flipkart: { bg: "#fff8f0", icon: "https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/flipkart.svg", initials: "FL", color: "#F74000" },
-  Uber: { bg: "#f0f0f0", icon: "https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/uber.svg", initials: "UB", color: "#000" },
-  Ola: { bg: "#ff8c00", initials: "OL", color: "#fff" },
-  Swiggy: { bg: "#fff4ee", icon: "https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/swiggy.svg", initials: "SW", color: "#FC8019" },
-  Amazon: { bg: "#fff8f0", icon: "https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/amazon.svg", initials: "AM", color: "#FF9900" },
-  Zomato: { bg: "#fff0f0", icon: "https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/zomato.svg", initials: "ZO", color: "#E23744" },
-  Reliance: { bg: "#1a3a8c", initials: "RL", color: "#fff" },
-  Tata: { bg: "#003087", initials: "TA", color: "#fff" }
+const STATUS_META = {
+  approved: { label: "Completed", className: "is-completed", progress: 100 },
+  successful: { label: "Completed", className: "is-completed", progress: 100 },
+  completed: { label: "Completed", className: "is-completed", progress: 100 },
+  processing: { label: "Processing", className: "is-processing", progress: 67 },
+  pending: { label: "Pending", className: "is-pending", progress: 0 },
+  initiated: { label: "Initiated", className: "is-processing", progress: 45 },
+  parse_failed: { label: "Failed", className: "is-failed", progress: 0 },
+  declined: { label: "Failed", className: "is-failed", progress: 0 },
+  failed: { label: "Failed", className: "is-failed", progress: 0 },
+  reupload_requested: { label: "Needs Re-upload", className: "is-pending", progress: 0 }
 };
 
 export default function UploadCenter() {
   const fileInputRef = useRef(null);
+  const folderInputRef = useRef(null);
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [progress, setProgress] = useState(0);
@@ -77,76 +43,101 @@ export default function UploadCenter() {
   const [drag, setDrag] = useState(false);
   const [error, setError] = useState("");
   const [uploads, setUploads] = useState([]);
-  const [activeFilter, setActiveFilter] = useState("all");
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState({ key: "transaction_date", direction: "asc" });
   const [page, setPage] = useState(0);
-  const [showColumns, setShowColumns] = useState(false);
-  const [visibleColumns, setVisibleColumns] = useState(() => Object.fromEntries(TABLE_COLUMNS.map((column) => [column.key, true])));
 
   const loadUploads = useCallback(async () => {
     const response = await api.get("/uploads");
-    setUploads(response.data);
+    setUploads(Array.isArray(response.data) ? response.data : []);
   }, []);
 
   useEffect(() => {
     loadUploads().catch(() => setUploads([]));
   }, [loadUploads]);
 
-  useWebSocket("uploads", useCallback((event) => {
-    if (event.event === "upload_progress" || event.event === "upload.progress") {
-      setProgress(event.payload.progress || 0);
-      setMessage(event.payload.filename ? `${event.payload.filename} processed` : "Upload processing");
-    }
-    if (event.event === "upload_status" || event.event === "approval.decision") {
-      setMessage(`Upload ${formatStatus(event.payload.status)}`);
-    }
-    if (["upload.complete", "approval.decision", "upload_status"].includes(event.event)) {
-      loadUploads().catch(() => setUploads([]));
-    }
-  }, [loadUploads]));
+  useWebSocket(
+    "uploads",
+    useCallback(
+      (event) => {
+        if (event.event === "upload_progress" || event.event === "upload.progress") {
+          setProgress(event.payload.progress || 0);
+          setMessage(event.payload.filename ? `${event.payload.filename} processing` : "Upload processing");
+        }
+        if (event.event === "upload_status" || event.event === "approval.decision") {
+          setMessage(`Upload ${formatStatus(event.payload.status)}`);
+        }
+        if (event.event === "upload.complete" && event.payload?.upload_id === preview?.upload_id) {
+          api
+            .get(`/uploads/${event.payload.upload_id}`)
+            .then((response) => {
+              setPreview(response.data);
+              setProgress(100);
+              setMessage("Validated and sent to manager review");
+            })
+            .catch(() => {
+              setMessage("Upload completed. Refresh to load the preview.");
+            });
+        }
+        if (event.event === "upload.failed" && event.payload?.upload_id === preview?.upload_id) {
+          setProgress(100);
+          const detail = event.payload.error;
+          setError(typeof detail === "string" ? detail : "Upload validation failed. Please check the file and try again.");
+          setMessage("Upload validation failed");
+        }
+        if (["upload.processing", "upload.complete", "upload.failed", "approval.decision", "upload_status"].includes(event.event)) {
+          loadUploads().catch(() => setUploads([]));
+        }
+      },
+      [loadUploads, preview?.upload_id]
+    )
+  );
 
-  const isValid = useMemo(() => file && [".xlsx", ".csv"].some((ext) => file.name.toLowerCase().endsWith(ext)), [file]);
+  const isValid = useMemo(
+    () => file && ACCEPTED_EXTENSIONS.some((ext) => file.name.toLowerCase().endsWith(ext)),
+    [file]
+  );
   const isTooLarge = file && file.size > MAX_FILE_SIZE;
   const canSubmit = isValid && !isTooLarge;
-  const rows = preview?.preview_rows || [];
-  const uploadStats = useMemo(() => {
-    const pending = uploads.filter((upload) => upload.status === "pending").length;
-    const approved = uploads.filter((upload) => upload.status === "approved").length;
-    const totalRows = uploads.reduce((sum, upload) => sum + Number(upload.total_rows || upload.rows || 0), 0);
+
+  const stats = useMemo(() => {
+    const completed = uploads.filter((upload) => isCompletedStatus(upload.status)).length;
+    const processing = uploads.filter((upload) => normalizeStatus(upload.status) === "processing").length;
+    const failed = uploads.filter((upload) => isFailedStatus(upload.status)).length;
     return [
-      { label: "Submissions", value: uploads.length, detail: "Last 100 files", icon: FiFileText },
-      { label: "Pending Review", value: pending, detail: "Manager queue", icon: FiClock },
-      { label: "Approved", value: approved, detail: "Cleared files", icon: FiCheckCircle },
-      { label: "Rows Processed", value: totalRows.toLocaleString("en-IN"), detail: "Uploaded records", icon: FiBarChart2 }
+      { label: "Files Uploaded", value: uploads.length, delta: `+${uploads.length}` },
+      { label: "Processing", value: processing, delta: `+${processing}` },
+      { label: "Completed", value: completed, delta: `+${completed}` },
+      { label: "Failed", value: failed, delta: `+${failed}` }
     ];
   }, [uploads]);
 
-  const filteredRows = useMemo(() => {
+  const filteredUploads = useMemo(() => {
     const query = search.trim().toLowerCase();
-    const nextRows = rows.filter((row) => {
-      const matchesType = activeFilter === "all" || String(row.transaction_type || "").toLowerCase() === activeFilter;
-      const matchesQuery = !query || [
-        row.merchant_name,
-        row.transaction_id,
-        row.invoice_id,
-        row.payment_method,
-        row.status,
-        row.amount
-      ].some((value) => String(value || "").toLowerCase().includes(query));
-      return matchesType && matchesQuery;
+    const sorted = [...uploads].sort((a, b) => {
+      const first = new Date(a.created_at || a.updated_at || 0).getTime();
+      const second = new Date(b.created_at || b.updated_at || 0).getTime();
+      return second - first;
     });
 
-    return [...nextRows].sort((a, b) => compareRows(a, b, sort));
-  }, [rows, activeFilter, search, sort]);
+    return sorted.filter((upload) => {
+      if (!query) return true;
+      return [
+        upload.filename,
+        upload.status,
+        upload.transaction_id,
+        upload.upload_id,
+        upload.id
+      ]
+        .some((value) => String(value || "").toLowerCase().includes(query));
+    });
+  }, [uploads, search]);
 
-  const pageCount = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
-  const pageRows = filteredRows.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
-  const activeColumns = TABLE_COLUMNS.filter((column) => visibleColumns[column.key]);
+  const pageCount = Math.max(1, Math.ceil(filteredUploads.length / PAGE_SIZE));
+  const pageRows = filteredUploads.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
 
   useEffect(() => {
     setPage(0);
-  }, [activeFilter, search, sort, preview?.upload_id]);
+  }, [search]);
 
   async function submitUpload() {
     if (!canSubmit) return;
@@ -159,9 +150,8 @@ export default function UploadCenter() {
     try {
       const response = await api.post("/uploads", form, { headers: { "Content-Type": "multipart/form-data" } });
       setPreview(response.data);
-      setActiveFilter("all");
-      setProgress(100);
-      setMessage("Validated and sent to manager review");
+      setProgress(40);
+      setMessage("File received. Validation is running in the background.");
       await loadUploads();
     } catch (err) {
       setProgress(0);
@@ -183,9 +173,6 @@ export default function UploadCenter() {
     setProgress(0);
     setError("");
     setMessage("");
-    setActiveFilter("all");
-    setSearch("");
-    setPage(0);
   }
 
   function reset() {
@@ -194,68 +181,52 @@ export default function UploadCenter() {
     setProgress(0);
     setMessage("");
     setError("");
-    setActiveFilter("all");
-    setSearch("");
-    setPage(0);
     if (fileInputRef.current) fileInputRef.current.value = "";
-  }
-
-  function toggleSort(key) {
-    setSort((current) => ({
-      key,
-      direction: current.key === key && current.direction === "asc" ? "desc" : "asc"
-    }));
-  }
-
-  function toggleColumn(key) {
-    setVisibleColumns((current) => {
-      const enabledCount = Object.values(current).filter(Boolean).length;
-      if (current[key] && enabledCount <= 1) return current;
-      return { ...current, [key]: !current[key] };
-    });
-  }
-
-  function exportPreviewCsv() {
-    if (!filteredRows.length) return;
-    const headers = activeColumns.map((column) => column.label);
-    const csv = [
-      headers,
-      ...filteredRows.map((row) => activeColumns.map((column) => formatCsvValue(row[column.key])))
-    ]
-      .map((line) => line.map((cell) => `"${String(cell ?? "").replaceAll("\"", "\"\"")}"`).join(","))
-      .join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `ledgerflow-preview-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    if (folderInputRef.current) folderInputRef.current.value = "";
   }
 
   return (
-    <div className="upload-center-page app-page">
+    <div className="lf-upload-page">
       <input
         ref={fileInputRef}
         className="hidden"
         type="file"
-        accept=".xlsx,.csv"
+        accept={ACCEPTED_EXTENSIONS.join(",")}
+        onChange={(event) => event.target.files?.[0] && selectFile(event.target.files[0])}
+      />
+      <input
+        ref={folderInputRef}
+        className="hidden"
+        type="file"
+        webkitdirectory="true"
+        directory="true"
         onChange={(event) => event.target.files?.[0] && selectFile(event.target.files[0])}
       />
 
-      <section className="upload-topbar">
+      <section className="lf-upload-header">
         <div>
-          <h1 className="upload-title">Upload Center</h1>
-          <p className="upload-subtitle">Upload .xlsx or .csv transaction files for review.</p>
+          <h1>Upload Center</h1>
+          <p>Upload and manage your transaction files</p>
         </div>
-        <button className="primary-button" onClick={() => fileInputRef.current?.click()}>
-          <FiUpload size={16} /> Upload file
+        <button className="lf-upload-icon-button" type="button" onClick={() => fileInputRef.current?.click()}>
+          <FiFileText size={16} />
         </button>
       </section>
 
+      <section className="lf-upload-stats-grid">
+        {stats.map((stat) => (
+          <div className="lf-upload-stat-card" key={stat.label}>
+            <span>{stat.label}</span>
+            <div className="lf-upload-stat-row">
+              <strong>{stat.value}</strong>
+              <small>{stat.delta}</small>
+            </div>
+          </div>
+        ))}
+      </section>
+
       <section
-        className={`upload-dropzone ${drag ? "is-dragging" : ""}`}
-        onClick={() => fileInputRef.current?.click()}
+        className={`lf-upload-dropzone ${drag ? "is-dragging" : ""}`}
         onDragOver={(event) => {
           event.preventDefault();
           setDrag(true);
@@ -263,335 +234,237 @@ export default function UploadCenter() {
         onDragLeave={() => setDrag(false)}
         onDrop={onDrop}
       >
-        <div className="upload-drop-icon">
-          <FiUploadCloud />
+        <div className="lf-upload-dropzone__icon">
+          <FiUploadCloud size={34} />
         </div>
-        <div className="upload-drop-title">Drop your file here</div>
-        <div className="upload-drop-sub">
-          <span>Browse files</span> / .xlsx or .csv / Max 10 MB
+        <h2>Drop your files here</h2>
+        <p>or click to browse from your computer</p>
+        <div className="lf-upload-dropzone__actions">
+          <button className="lf-upload-primary" type="button" onClick={() => fileInputRef.current?.click()}>
+            Select Files
+          </button>
+          <button className="lf-upload-secondary" type="button" onClick={() => folderInputRef.current?.click()}>
+            Browse Folder
+          </button>
         </div>
-      </section>
-
-      <section className="upload-signal-grid">
-        {uploadStats.map((stat, index) => (
-          <UploadSignal key={stat.label} {...stat} delay={index * 0.05} />
-        ))}
-      </section>
-
-      <section className="upload-workflow-strip">
-        <WorkflowStep active done={Boolean(file)} icon={FiUploadCloud} label="File intake" detail={file ? "Spreadsheet attached" : "Awaiting spreadsheet"} />
-        <WorkflowStep active={Boolean(file)} done={Boolean(preview)} icon={FiShield} label="Schema validation" detail={preview ? "Validation passed" : "Required columns checked"} />
-        <WorkflowStep active={Boolean(preview)} done={Boolean(preview)} icon={FiActivity} label="Preview extraction" detail={preview ? `${rows.length} rows rendered` : "Dynamic table generated"} />
-        <WorkflowStep active={Boolean(preview)} done={Boolean(preview)} icon={FiSend} label="Manager routing" detail={preview ? "In review queue" : "Ready after validation"} />
+        <span>Supported formats: CSV, XLSX, JSON • Max file size: 10MB</span>
       </section>
 
       {file && (
-        <section className="upload-file-row">
-          <div className="upload-file-icon">
-            <FiFileText />
-          </div>
-          <div className="upload-file-copy">
-            <div className="upload-file-name">{file.name}</div>
-            <div className="upload-file-meta">
-              {preview ? `${preview.total_rows} rows / ${preview.total_columns} columns / ` : ""}
-              {formatFileSize(file.size)}
+        <section className="lf-upload-current-file">
+          <div className="lf-upload-current-file__meta">
+            <div className="lf-upload-file-tile">
+              <FiFileText size={18} />
+            </div>
+            <div>
+              <strong>{file.name}</strong>
+              <p>{formatFileSize(file.size)}{preview ? ` • ${preview.total_rows || 0} rows` : ""}</p>
             </div>
           </div>
-          <div className={`upload-file-badge ${canSubmit || preview ? "is-valid" : "is-invalid"}`}>
-            {canSubmit || preview ? <FiCheck size={12} /> : <FiAlertCircle size={12} />}
-            {preview ? "Validated" : canSubmit ? "Ready" : "Needs review"}
+          <div className="lf-upload-current-file__actions">
+            <div className="lf-upload-inline-progress">
+              <div className="lf-upload-inline-progress__label">
+                <span>{preview?.status === "processing" ? "Processing" : "Upload progress"}</span>
+                <span>{progress}%</span>
+              </div>
+              <div className="lf-upload-inline-progress__track">
+                <div className="lf-upload-inline-progress__fill" style={{ width: `${progress}%` }} />
+              </div>
+            </div>
+            <button className="lf-upload-primary" type="button" disabled={!canSubmit || Boolean(preview)} onClick={submitUpload}>
+              Upload
+            </button>
+            <button className="lf-upload-close" type="button" onClick={reset}>
+              <FiX size={16} />
+            </button>
           </div>
-          <button className="upload-remove-button" onClick={reset} title="Remove file">
-            <FiX />
-          </button>
         </section>
       )}
 
-      {file && !preview && (
-        <section className="upload-action-row">
-          <div className="upload-progress-wrap">
-            <div className="upload-progress-label">
-              <span>Upload progress</span>
-              <span>{progress}%</span>
-            </div>
-            <div className="upload-progress-track">
-              <div className="upload-progress-fill" style={{ width: `${progress}%` }} />
-            </div>
-          </div>
-          <button className="primary-button" disabled={!canSubmit} onClick={submitUpload}>
-            <FiCheckCircle size={16} /> Validate preview
-          </button>
-          <button className="icon-button" onClick={reset} title="Reset upload">
-            <FiRefreshCw />
-          </button>
-        </section>
-      )}
-
-      {message && <p className="upload-message">{message}</p>}
+      {message && <div className="lf-upload-feedback is-success">{message}</div>}
       {(error || isTooLarge) && (
-        <div className="upload-error">
-          <FiAlertCircle />
+        <div className="lf-upload-feedback is-error">
+          <FiAlertCircle size={16} />
           <span>{error || "File is larger than the 10 MB limit."}</span>
         </div>
       )}
 
-      <section className="upload-preview-header">
-        <div>
-          <h2 className="upload-section-title">Transaction preview</h2>
-          <p className="upload-section-subtitle">
-            {preview ? `${filteredRows.length} of ${rows.length} rows visible` : "Preview appears after validation."}
-          </p>
-        </div>
-        <span className="upload-count-badge">{filteredRows.length} rows</span>
-      </section>
-
-      <section className="upload-filters" aria-label="Transaction type filters">
-        {FILTERS.map((filter) => {
-          const value = filter.toLowerCase();
-          const active = activeFilter === value;
-          return (
-            <button
-              key={filter}
-              className={`upload-filter ${active ? "is-active" : ""}`}
-              onClick={() => setActiveFilter(value)}
-              disabled={!preview}
-            >
-              {filter}
-            </button>
-          );
-        })}
-      </section>
-
-      <section className="upload-table-wrap">
-        {preview ? (
-          <>
-            <div className="upload-table-toolbar">
-              <label className="upload-search">
-                <FiSearch />
-                <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search merchant, ID, invoice, status..." />
-              </label>
-              <div className="upload-table-actions">
-                <div className="upload-column-menu-wrap">
-                  <button className="secondary-button" onClick={() => setShowColumns((value) => !value)}>
-                    <FiColumns /> Columns
-                  </button>
-                  {showColumns && (
-                    <div className="upload-column-menu">
-                      {TABLE_COLUMNS.map((column) => (
-                        <label key={column.key}>
-                          <input type="checkbox" checked={visibleColumns[column.key]} onChange={() => toggleColumn(column.key)} />
-                          {column.label}
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <button className="secondary-button" onClick={exportPreviewCsv} disabled={!filteredRows.length}>
-                  <FiDownload /> Export CSV
-                </button>
-              </div>
-            </div>
-            <table className="upload-table">
-              <thead>
-                <tr>
-                  {activeColumns.map((column) => (
-                    <th key={column.key} style={{ width: column.width }}>
-                      <button className="upload-sort-button" onClick={() => toggleSort(column.key)}>
-                        {column.label}
-                        <span>{sort.key === column.key ? (sort.direction === "asc" ? "â†‘" : "â†“") : "â†•"}</span>
-                      </button>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {pageRows.map((row, index) => (
-                  <tr key={row.id || `${row.transaction_id}-${index}`}>
-                    {activeColumns.map((column) => (
-                      <td key={column.key}>{renderCell(column.key, row, page * PAGE_SIZE + index)}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="upload-pagination">
-              <span>
-                Showing <b>{filteredRows.length ? page * PAGE_SIZE + 1 : 0}-{Math.min(filteredRows.length, page * PAGE_SIZE + PAGE_SIZE)}</b> of <b>{filteredRows.length}</b>
-              </span>
-              <div>
-                <button className="icon-button" disabled={page === 0} onClick={() => setPage((value) => Math.max(0, value - 1))} title="Previous page">
-                  <FiChevronLeft />
-                </button>
-                <span className="upload-page-chip">Page {page + 1} / {pageCount}</span>
-                <button className="icon-button" disabled={page + 1 >= pageCount} onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))} title="Next page">
-                  <FiChevronRight />
-                </button>
-              </div>
-            </div>
-          </>
-        ) : (
-          <div className="upload-empty-state">
-            <div className="upload-empty-visual">
-              <FiFileText />
-              <span className="upload-empty-pulse" />
-            </div>
-            <div>
-              <strong>No validated preview yet</strong>
-              <p>Upload a spreadsheet to see extracted rows, validation status, transaction types, and approval routing here.</p>
-            </div>
-            <div className="upload-empty-metrics">
-              <span><b>10 MB</b> max file</span>
-              <span><b>XLSX/CSV</b> supported</span>
-              <span><b>Live</b> queue refresh</span>
-            </div>
+      <section className="lf-upload-table-card">
+        <div className="lf-upload-table-card__header">
+          <div>
+            <h2>Recent Uploads</h2>
+            <p>{filteredUploads.length} files</p>
           </div>
-        )}
-      </section>
-
-      <section className="upload-submit-row">
-        <div className="upload-submit-info">
-          {preview ? (
-            <>Submitting <span>{rows.length} transactions</span> for manager review</>
-          ) : (
-            <>Latest uploads in your queue: <span>{uploads.length}</span></>
-          )}
+          <div className="lf-upload-table-card__tools">
+            <label className="lf-upload-search">
+              <FiSearch size={18} />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search files..." />
+            </label>
+            <button className="lf-upload-filter-button" type="button">
+              <FiSliders size={16} />
+            </button>
+          </div>
         </div>
-        <button className="primary-button upload-submit-button" disabled={!preview}>
-          <FiSend size={16} /> {preview ? "In review queue" : "Submit for review"}
-        </button>
+
+        <div className="lf-upload-table-wrap">
+          <table className="lf-upload-table">
+            <thead>
+              <tr>
+                <th className="is-check"><input type="checkbox" aria-label="Select all uploads" /></th>
+                <th>File Name</th>
+                <th>Size</th>
+                <th>Records</th>
+                <th>Progress</th>
+                <th>Status</th>
+                <th>Uploaded</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pageRows.length ? (
+                pageRows.map((upload, index) => {
+                  const statusMeta = getStatusMeta(upload.status);
+                  return (
+                    <tr key={upload.id || upload.upload_id || `${upload.filename}-${index}`}>
+                      <td className="is-check"><input type="checkbox" aria-label={`Select ${upload.filename || "upload"}`} /></td>
+                      <td>
+                        <div className="lf-upload-file-cell">
+                          <div className={`lf-upload-file-icon ${fileIconClass(upload.filename)}`}>
+                            <FiFileText size={16} />
+                          </div>
+                          <span>{upload.filename || `upload_${index + 1}`}</span>
+                        </div>
+                      </td>
+                      <td>{formatUploadSize(upload)}</td>
+                      <td>{formatRecordCount(upload)}</td>
+                      <td>
+                        <UploadProgressCell upload={upload} statusMeta={statusMeta} />
+                      </td>
+                      <td>
+                        <span className={`lf-upload-status-pill ${statusMeta.className}`}>{statusMeta.label}</span>
+                      </td>
+                      <td>{formatRelativeUploadTime(upload.created_at || upload.updated_at)}</td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan={7}>
+                    <div className="lf-upload-empty">No uploads found yet.</div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="lf-upload-pagination">
+          <span>
+            Showing {filteredUploads.length ? page * PAGE_SIZE + 1 : 0} to {Math.min(filteredUploads.length, page * PAGE_SIZE + PAGE_SIZE)} of {filteredUploads.length} files
+          </span>
+          <div className="lf-upload-pagination__controls">
+            <button className="lf-upload-page-button is-ghost" type="button" disabled={page === 0} onClick={() => setPage((value) => Math.max(0, value - 1))}>
+              Previous
+            </button>
+            {Array.from({ length: pageCount }, (_, index) => (
+              <button
+                key={index}
+                className={`lf-upload-page-button ${page === index ? "is-active" : "is-ghost"}`}
+                type="button"
+                onClick={() => setPage(index)}
+              >
+                {index + 1}
+              </button>
+            ))}
+            <button className="lf-upload-page-button is-ghost" type="button" disabled={page + 1 >= pageCount} onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))}>
+              Next
+            </button>
+          </div>
+        </div>
       </section>
     </div>
   );
 }
 
-function renderCell(key, row, index) {
-  const renderers = {
-    merchant_name: <MerchantCell merchant={row.merchant_name} />,
-    transaction_id: <span className="mono-cell">{row.transaction_id || `Row ${index + 1}`}</span>,
-    transaction_date: formatDate(row.transaction_date),
-    amount: <span className="amount-cell">{formatMoney(row.amount)}</span>,
-    transaction_type: <TypePill type={row.transaction_type} />,
-    payment_method: row.payment_method || "-",
-    status: <StatusPill status={row.status || "Pending"} />,
-    invoice_id: <span className="muted-cell">{row.invoice_id || "-"}</span>
-  };
-  return renderers[key] ?? "-";
+function UploadProgressCell({ upload, statusMeta }) {
+  const progress = upload.progress ?? statusMeta.progress ?? inferProgress(upload.status);
+  const label = progress >= 100 ? "100%" : `${progress}%`;
+
+  return (
+    <div className="lf-upload-progress-cell">
+      <div className="lf-upload-progress-track">
+        <div className={`lf-upload-progress-fill ${statusMeta.className}`} style={{ width: `${Math.max(0, Math.min(progress, 100))}%` }} />
+      </div>
+      <div className={`lf-upload-progress-label ${statusMeta.className}`}>
+        {progress >= 100 ? <FiCheckCircle size={14} /> : progress > 0 ? <FiClock size={14} /> : <FiDownload size={14} />}
+        <span>{label}</span>
+      </div>
+    </div>
+  );
 }
 
-function compareRows(a, b, sort) {
-  const first = normalizeSortValue(a[sort.key], sort.key);
-  const second = normalizeSortValue(b[sort.key], sort.key);
-  if (first < second) return sort.direction === "asc" ? -1 : 1;
-  if (first > second) return sort.direction === "asc" ? 1 : -1;
+function normalizeStatus(status) {
+  return String(status || "pending").toLowerCase();
+}
+
+function getStatusMeta(status) {
+  return STATUS_META[normalizeStatus(status)] || { label: formatStatus(status), className: "is-pending", progress: inferProgress(status) };
+}
+
+function inferProgress(status) {
+  const normalized = normalizeStatus(status);
+  if (["approved", "successful", "completed"].includes(normalized)) return 100;
+  if (["processing"].includes(normalized)) return 67;
+  if (["initiated"].includes(normalized)) return 45;
   return 0;
 }
 
-function normalizeSortValue(value, key) {
-  if (key === "amount") return Number(value || 0);
-  if (key === "transaction_date") return value ? new Date(value).getTime() : 0;
-  return String(value || "").toLowerCase();
+function isCompletedStatus(status) {
+  return ["approved", "successful", "completed"].includes(normalizeStatus(status));
 }
 
-function formatCsvValue(value) {
-  if (value === null || value === undefined) return "";
-  return value;
+function isFailedStatus(status) {
+  return ["failed", "declined", "parse_failed"].includes(normalizeStatus(status));
 }
 
-function UploadSignal({ label, value, detail, icon: Icon, delay }) {
-  return (
-    <div className="upload-signal-card fintech-card" style={{ animation: `staggerIn 0.4s ease-out ${0.12 + delay}s both` }}>
-      <div>
-        <span>{label}</span>
-        <strong>{value}</strong>
-        <small>{detail}</small>
-      </div>
-      <div className="upload-signal-icon">
-        <Icon />
-      </div>
-    </div>
-  );
+function fileIconClass(filename) {
+  const name = String(filename || "").toLowerCase();
+  if (name.endsWith(".json")) return "is-json";
+  if (name.endsWith(".xlsx")) return "is-xlsx";
+  return "is-csv";
 }
 
-function WorkflowStep({ active, done, icon: Icon, label, detail }) {
-  return (
-    <div className={`workflow-step ${active ? "is-active" : ""} ${done ? "is-done" : ""}`}>
-      <div className="workflow-step-icon">
-        <Icon />
-      </div>
-      <div>
-        <strong>{label}</strong>
-        <span>{detail}</span>
-      </div>
-    </div>
-  );
+function formatUploadSize(upload) {
+  const raw = Number(upload.file_size || upload.size || 0);
+  if (raw > 0) return formatFileSize(raw);
+  const rows = Number(upload.total_rows || upload.rows || 0);
+  if (rows >= 1000) return `${(rows / 6400).toFixed(1)} MB`;
+  return "-";
 }
 
-function MerchantCell({ merchant }) {
-  const name = merchant || "Unknown";
-  const brandKey = Object.keys(MERCHANTS).find((key) => name.toLowerCase().includes(key.toLowerCase()));
-  const config = MERCHANTS[brandKey] || {
-    bg: "#155E58",
-    color: "#fff",
-    initials: name.split(" ").map((word) => word[0]).join("").toUpperCase().slice(0, 2) || "NA"
-  };
-
-  return (
-    <div className="merchant-cell">
-      <div className="merchant-logo" style={{ background: config.bg }}>
-        {config.icon && (
-          <img
-            src={config.icon}
-            alt=""
-            onError={(event) => {
-              event.currentTarget.style.display = "none";
-              const fallback = event.currentTarget.nextElementSibling;
-              if (fallback) fallback.style.display = "inline";
-            }}
-          />
-        )}
-        <span style={{ color: config.color, display: config.icon ? "none" : "inline" }}>
-          {config.initials}
-        </span>
-      </div>
-      <span className="merchant-name">{name}</span>
-    </div>
-  );
+function formatRecordCount(upload) {
+  return Number(upload.total_rows || upload.rows || 0).toLocaleString("en-IN") || "-";
 }
 
-function TypePill({ type }) {
-  const config = TYPE_STYLES[type] || { bg: "#E7F5F1", color: "#155E58" };
-  return (
-    <span className="upload-pill" style={{ background: config.bg, color: config.color }}>
-      {type || "-"}
-    </span>
-  );
-}
-
-function StatusPill({ status }) {
-  const config = STATUS_STYLES[status] || { bg: "#E7F5F1", color: "#155E58" };
-  return (
-    <span className="upload-pill" style={{ background: config.bg, color: config.color }}>
-      <span className="upload-pill-dot" style={{ background: config.color }} />
-      {formatStatus(status)}
-    </span>
-  );
-}
-
-function formatMoney(value) {
-  return `\u20b9${Number(value || 0).toLocaleString("en-IN")}`;
-}
-
-function formatDate(value) {
+function formatRelativeUploadTime(value) {
   if (!value) return "-";
-  return new Date(value).toLocaleDateString("en-IN");
+  const timestamp = new Date(value).getTime();
+  if (Number.isNaN(timestamp)) return "-";
+  const diff = Date.now() - timestamp;
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+  const days = Math.floor(hours / 24);
+  if (hours < 1) return "Just now";
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
 function formatFileSize(size) {
   if (!size) return "0 KB";
-  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(2)} MB`;
+  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
   return `${Math.max(1, Math.round(size / 1024))} KB`;
 }
 
 function formatStatus(status) {
-  return String(status || "-").replaceAll("_", " ");
+  return String(status || "-")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
