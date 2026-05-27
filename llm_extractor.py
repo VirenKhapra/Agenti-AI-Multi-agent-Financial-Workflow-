@@ -1,4 +1,6 @@
 import os
+import json
+
 from groq import Groq
 
 
@@ -12,59 +14,207 @@ client = Groq(
 
 
 # =========================================================
+# CONVERT ALL VALUES TO STRING
+# =========================================================
+
+def convert_all_to_string(data):
+
+    if isinstance(data, list):
+
+        for row in data:
+
+            for key in row:
+
+                if row[key] is None:
+
+                    row[key] = ""
+
+                else:
+
+                    row[key] = str(row[key])
+
+    return data
+
+
+# =========================================================
 # MAIN EXTRACTION FUNCTION
 # =========================================================
 
 def extract_data(email_text):
 
-    print("\n🧠 SENDING DATA TO GROQ...\n")
+    print("\nEXTRACTING GL DATA...\n")
+
+    print("\nSENDING DATA TO GROQ...\n")
 
     # =====================================================
-    # STRICT EXTRACTION PROMPT
+    # STRICT GL EXTRACTION PROMPT
     # =====================================================
 
     prompt = f"""
-You are an expert financial data extraction system.
+You are an expert AI Financial ETL Extraction Engine.
 
-Your task is to extract ONLY the financial transaction
-information explicitly present in the email.
+Your task is to normalize and structure
+already preprocessed General Ledger data.
 
-STRICT RULES:
+=====================================================
+IMPORTANT
+=====================================================
 
-1. ONLY extract information present in the email.
-2. DO NOT generate fake transactions.
-3. DO NOT hallucinate values.
-4. DO NOT create random names or amounts.
-5. DO NOT assume missing values.
-6. If any value is missing, return empty string "".
-7. Return ONLY valid JSON.
-8. Return ONLY JSON array.
-9. DO NOT add markdown.
-10. DO NOT add explanations.
-11. DO NOT add comments.
-12. DO NOT generate sample data.
-13. Extract MAXIMUM 10 transactions only.
-14. Stop immediately after the final JSON bracket ].
+The input data is already preprocessed using:
 
-Required JSON format:
+- field mapping
+- relational mapping
+- financial logic rules
+
+DO NOT recalculate financial values.
+
+=====================================================
+STRICT EXTRACTION RULES
+=====================================================
+
+1. Extract ONLY values present in input.
+2. NEVER hallucinate fields.
+3. NEVER generate fake transactions.
+4. NEVER modify financial amounts.
+5. NEVER change business meaning.
+6. Preserve dates exactly as present.
+7. Preserve transaction order exactly.
+8. Return ONLY valid JSON.
+9. Return ONLY JSON array.
+10. No markdown.
+11. No explanations.
+12. No comments.
+13. No extra text before JSON.
+14. No extra text after JSON.
+15. If field not present in source data,
+DO NOT include that field in output JSON.
+16. Preserve original accounting meaning.
+17. Maximum 14 rows only.
+18. Ignore helper columns.
+19. Ignore unnamed columns.
+20. Ignore blank columns.
+
+=====================================================
+VERY IMPORTANT DATA TYPE RULE
+=====================================================
+
+RETURN ALL VALUES AS STRINGS.
+
+Examples:
+
+CORRECT:
+"voucher_number": "1.1"
+
+WRONG:
+"voucher_number": 1.1
+
+CORRECT:
+"account_code": "230"
+
+WRONG:
+"account_code": 230
+
+=====================================================
+PRE-CALCULATED FINANCIAL VALUES
+=====================================================
+
+The following fields are already calculated.
+
+NEVER recalculate them.
+
+- debit_amount
+- credit_amount
+- account_class
+- account_subclass
+- country
+- region
+
+IMPORTANT:
+
+1. NEVER modify debit_amount.
+2. NEVER modify credit_amount.
+3. NEVER apply sign logic again.
+4. NEVER swap debit/credit.
+5. Preserve financial values exactly.
+
+=====================================================
+FIELD MAPPING RULES
+=====================================================
+
+voucher_date:
+- voucher_date
+- date
+
+voucher_number:
+- voucher_number
+- entryno
+
+voucher_type:
+- class
+- subclass
+
+ledger_name:
+- subaccount
+- account
+- ledger
+
+particulars:
+- details
+
+narration:
+- narration
+- details
+
+account_code:
+- account_key
+
+=====================================================
+OUTPUT FIELD RULES
+=====================================================
+
+1. Return ONLY fields that actually exist
+in the source data.
+
+2. DO NOT create fake fields.
+
+3. DO NOT return unnecessary blank fields.
+
+4. If a field is missing completely,
+omit that field entirely.
+
+5. Preserve all financial values exactly.
+
+6. Preserve debit_amount and credit_amount exactly.
+
+7. Preserve account hierarchy exactly.
+
+=====================================================
+RETURN FORMAT
+=====================================================
+
+Return ONLY valid JSON array.
+
+Example:
 
 [
-    {{
-        "customer_name": "",
-        "account_number": "",
-        "transaction_id": "",
-        "transaction_date": "",
-        "amount": "",
-        "currency": "",
-        "transaction_type": "",
-        "merchant_name": "",
-        "invoice_id": "",
-        "payment_method": "",
-        "status": ""
-    }}
+  {{
+    "voucher_date": "2025-01-01",
+    "voucher_number": "1.1",
+    "ledger_name": "Cash at Bank",
+    "particulars": "Cash Sales",
+    "debit_amount": "5000",
+    "account_code": "10",
+    "country": "India",
+    "region": "Asia",
+    "account_class": "Assets",
+    "account_subclass": "Current Assets"
+  }}
 ]
 
-EMAIL CONTENT:
+=====================================================
+INPUT DATA
+=====================================================
+
 {email_text}
 """
 
@@ -79,16 +229,19 @@ EMAIL CONTENT:
             model="llama-3.3-70b-versatile",
 
             messages=[
+
                 {
                     "role": "system",
+
                     "content": (
-                        "You are a strict JSON financial "
-                        "extraction engine."
+                        "You are a strict JSON "
+                        "financial extraction engine."
                     )
                 },
 
                 {
                     "role": "user",
+
                     "content": prompt
                 }
             ],
@@ -102,9 +255,50 @@ EMAIL CONTENT:
         # EXTRACT OUTPUT
         # =================================================
 
-        output = response.choices[0].message.content
+        output = (
+            response
+            .choices[0]
+            .message
+            .content
+        )
 
-        print("🤖 GROQ RESPONSE:\n")
+        # =================================================
+        # CLEAN OUTPUT
+        # =================================================
+
+        output = output.strip()
+
+        output = output.replace(
+            "```json",
+            ""
+        )
+
+        output = output.replace(
+            "```",
+            ""
+        ).strip()
+
+        # =================================================
+        # FORCE STRING CONVERSION
+        # =================================================
+
+        parsed_output = json.loads(output)
+
+        parsed_output = convert_all_to_string(
+            parsed_output
+        )
+
+        output = json.dumps(
+            parsed_output,
+            indent=4
+        )
+
+        # =================================================
+        # PRINT RESPONSE
+        # =================================================
+
+        print("\nGROQ RESPONSE:\n")
+
         print(output)
 
         return output
@@ -115,7 +309,8 @@ EMAIL CONTENT:
 
     except Exception as e:
 
-        print("\n❌ GROQ ERROR:\n")
+        print("\nGROQ ERROR:\n")
+
         print(e)
 
         return "LLM FAILED"

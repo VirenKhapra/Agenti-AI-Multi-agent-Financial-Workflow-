@@ -43,13 +43,135 @@ SENDER_PASSWORD = "yurwgblgotrhrbjf"
 
 def send_failure_notification(validation_result):
 
-    print("\n SENDING FAILURE NOTIFICATION...\n")
+    print(
+        "\n SENDING FAILURE NOTIFICATION...\n"
+    )
 
     try:
 
-        # =========================================================
+        # =====================================================
+        # FORMAT ERRORS FOR HUMAN READABILITY
+        # =====================================================
+
+        formatted_errors = ""
+
+        errors = validation_result.get(
+            "errors",
+            []
+        )
+
+        # =====================================================
+        # NO ERRORS FOUND
+        # =====================================================
+
+        if not errors:
+
+            formatted_errors = (
+                "Validation failed but "
+                "specific error details "
+                "were not available."
+            )
+
+        else:
+
+            for error in errors:
+
+                # =============================================
+                # SKIP TECHNICAL PYDANTIC ERRORS
+                # =============================================
+
+                if (
+                    "Pydantic"
+                    in error.get(
+                        "error",
+                        ""
+                    )
+                ):
+
+                    continue
+
+                # =============================================
+                # EXTRACT DETAILS
+                # =============================================
+
+                row_number = (
+
+                    error.get(
+                        "transaction_index",
+                        0
+                    ) + 1
+                )
+
+                failed_field = error.get(
+                    "failed_field",
+                    "Unknown Field"
+                )
+
+                current_value = error.get(
+                    "current_value",
+                    "EMPTY"
+                )
+
+                # =============================================
+                # CLEAN EMPTY VALUES
+                # =============================================
+
+                if current_value in [
+                    "",
+                    None
+                ]:
+
+                    current_value = "EMPTY"
+
+                # =============================================
+                # FRIENDLY ERROR MESSAGES
+                # =============================================
+
+                if failed_field == "amount":
+
+                    readable_error = (
+                        f"• Row {row_number}: "
+                        f"Amount field is empty."
+                    )
+
+                elif failed_field == "customer_name":
+
+                    readable_error = (
+                        f"• Row {row_number}: "
+                        f"Customer name is missing "
+                        f"or invalid."
+                    )
+
+                elif failed_field == "merchant_name":
+
+                    readable_error = (
+                        f"• Row {row_number}: "
+                        f"Merchant name is invalid."
+                    )
+
+                elif failed_field == "transaction_id":
+
+                    readable_error = (
+                        f"• Row {row_number}: "
+                        f"Transaction ID format "
+                        f"is invalid."
+                    )
+
+                else:
+
+                    readable_error = (
+                        f"• Row {row_number}: "
+                        f"Issue found in "
+                        f"'{failed_field}' field."
+                    )
+
+                formatted_errors += (
+                    readable_error + "\n"
+                )
+
+        # =====================================================
         # CREATE LLM PROMPT
-        # =========================================================
+        # =====================================================
 
         prompt = f"""
 You are an AI Notification Agent.
@@ -60,17 +182,21 @@ Context:
 The financial extraction pipeline failed validation
 after multiple retry attempts.
 
-Validation Result:
-{validation_result}
+Validation Errors:
+{formatted_errors}
 
 Instructions:
-1. Generate a professional email subject
-2. Generate a professional email body
-3. Keep the tone formal and corporate
-4. Mention that manual verification is required
-5. Mention validation failure
-6. End the email professionally
-7. After Regards in next line instead of "AI Notification Agent" add EY
+1. Generate a professional email subject.
+2. Generate a professional email body.
+3. Keep the tone formal and corporate.
+4. Use simple business English.
+5. Mention that manual verification is required.
+6. Do NOT include JSON.
+7. Do NOT include technical logs.
+8. Do NOT mention Pydantic.
+9. Do NOT mention parsing errors.
+10. End professionally.
+11. After Regards add EY.
 
 Return ONLY in this format:
 
@@ -81,10 +207,9 @@ BODY:
 <body here>
 """
 
-
-        # =========================================================
+        # =====================================================
         # SEND TO GROQ
-        # =========================================================
+        # =====================================================
 
         response = client.chat.completions.create(
 
@@ -100,46 +225,54 @@ BODY:
             temperature=0
         )
 
-
-        # =========================================================
+        # =====================================================
         # GET GENERATED RESPONSE
-        # =========================================================
+        # =====================================================
 
         generated_text = (
+
             response.choices[0]
+
             .message.content
         )
 
-        print("\n GENERATED EMAIL:\n")
+        print(
+            "\n GENERATED EMAIL:\n"
+        )
+
         print(generated_text)
 
-
-        # =========================================================
+        # =====================================================
         # EXTRACT SUBJECT
-        # =========================================================
+        # =====================================================
 
         subject = (
+
             generated_text
+
             .split("BODY:")[0]
+
             .replace("SUBJECT:", "")
+
             .strip()
         )
 
-
-        # =========================================================
+        # =====================================================
         # EXTRACT BODY
-        # =========================================================
+        # =====================================================
 
         body = (
+
             generated_text
+
             .split("BODY:")[1]
+
             .strip()
         )
 
-
-        # =========================================================
+        # =====================================================
         # CREATE EMAIL MESSAGE
-        # =========================================================
+        # =====================================================
 
         msg = MIMEText(body)
 
@@ -147,10 +280,9 @@ BODY:
         msg["From"] = SENDER_EMAIL
         msg["To"] = MANAGER_EMAIL
 
-
-        # =========================================================
-        # CONNECT TO GMAIL SMTP SERVER
-        # =========================================================
+        # =====================================================
+        # CONNECT TO SMTP
+        # =====================================================
 
         server = smtplib.SMTP(
             "smtp.gmail.com",
@@ -159,54 +291,58 @@ BODY:
 
         server.starttls()
 
-
-        # =========================================================
-        # LOGIN TO GMAIL
-        # =========================================================
+        # =====================================================
+        # LOGIN
+        # =====================================================
 
         server.login(
             SENDER_EMAIL,
             SENDER_PASSWORD
         )
 
-
-        # =========================================================
+        # =====================================================
         # SEND EMAIL
-        # =========================================================
+        # =====================================================
 
         server.send_message(msg)
 
-
-        # =========================================================
+        # =====================================================
         # CLOSE SERVER
-        # =========================================================
+        # =====================================================
 
         server.quit()
 
-        print("\n FAILURE EMAIL SENT SUCCESSFULLY\n")
+        print(
+            "\n FAILURE EMAIL "
+            "SENT SUCCESSFULLY\n"
+        )
 
-
-        # =========================================================
+        # =====================================================
         # SUCCESS RESPONSE
-        # =========================================================
+        # =====================================================
 
         return {
+
             "status": "notification_sent",
+
             "subject": subject
         }
 
+    # =========================================================
+    # EXCEPTION HANDLING
+    # =========================================================
 
     except Exception as e:
 
-        print("\n NOTIFICATION ERROR:\n")
+        print(
+            "\n NOTIFICATION ERROR:\n"
+        )
+
         print(e)
 
-
-        # =========================================================
-        # FAILURE RESPONSE
-        # =========================================================
-
         return {
+
             "status": "notification_failed",
+
             "error": str(e)
         }

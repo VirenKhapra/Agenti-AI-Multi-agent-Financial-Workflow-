@@ -1,8 +1,13 @@
 import json
 import re
 
-from pydantic import BaseModel, ValidationError
+from collections import defaultdict
+
+from pydantic import BaseModel
+from pydantic import ValidationError
+
 from jsonschema import validate
+
 from rapidfuzz import fuzz
 
 
@@ -10,19 +15,61 @@ from rapidfuzz import fuzz
 # PYDANTIC MODEL
 # =========================================================
 
-class Transaction(BaseModel):
+class GLTransaction(BaseModel):
 
-    customer_name: str
-    account_number: str
-    transaction_id: str
-    transaction_date: str
-    amount: float
-    currency: str
-    transaction_type: str
-    merchant_name: str
-    invoice_id: str
-    payment_method: str
-    status: str
+    voucher_date: str = ""
+
+    voucher_number: str = ""
+
+    voucher_type: str = ""
+
+    ledger_name: str = ""
+
+    particulars: str = ""
+
+    narration: str = ""
+
+    debit_amount: str = ""
+
+    credit_amount: str = ""
+
+    balance: str = ""
+
+    reference_number: str = ""
+
+    party_name: str = ""
+
+    gst_number: str = ""
+
+    cost_center: str = ""
+
+    branch: str = ""
+
+    currency: str = ""
+
+    account_code: str = ""
+
+    invoice_number: str = ""
+
+    country: str = ""
+
+    region: str = ""
+
+    account_class: str = ""
+
+    account_subclass: str = ""
+
+    territory_key: str = ""
+
+    account_key: str = ""
+
+    account: str = ""
+
+    subaccount: str = ""
+
+    amount: str = ""
+
+    dr_cr_source: str = ""
 
 
 # =========================================================
@@ -38,27 +85,62 @@ transaction_schema = {
         "type": "object",
 
         "required": [
-            "customer_name",
-            "account_number",
-            "transaction_id",
-            "transaction_date",
-            "amount",
-            "currency",
-            "transaction_type",
-            "merchant_name",
-            "invoice_id",
-            "payment_method",
-            "status"
+
+            "voucher_date"
         ]
     }
 }
 
 
 # =========================================================
+# SAFE FLOAT CONVERTER
+# =========================================================
+
+def safe_float(value):
+
+    if value in ["", None]:
+
+        return 0.0
+
+    try:
+
+        value = str(value).strip()
+
+        # =============================================
+        # REMOVE COMMAS
+        # =============================================
+
+        value = value.replace(",", "")
+
+        # =============================================
+        # HANDLE BRACKET NEGATIVE VALUES
+        # (500) → -500
+        # =============================================
+
+        if value.startswith("(") and value.endswith(")"):
+
+            value = "-" + value[1:-1]
+
+        return float(value)
+
+    except:
+
+        return 0.0
+
+
+# =========================================================
 # VALIDATOR FUNCTION
 # =========================================================
 
-def validate_data(email_text, data):
+def validate_data(
+
+    email_text,
+
+    data
+
+):
+
+    print("\nVALIDATING GL DATA...\n")
 
     try:
 
@@ -67,16 +149,27 @@ def validate_data(email_text, data):
         # =================================================
 
         cleaned_data = (
-            data.replace("```json", "")
-                .replace("```", "")
-                .strip()
+
+            data.replace(
+                "```json",
+                ""
+            )
+
+            .replace(
+                "```",
+                ""
+            )
+
+            .strip()
         )
 
         # =================================================
         # CONVERT STRING TO JSON
         # =================================================
 
-        parsed = json.loads(cleaned_data)
+        parsed = json.loads(
+            cleaned_data
+        )
 
         # =================================================
         # ENSURE JSON ARRAY
@@ -85,8 +178,44 @@ def validate_data(email_text, data):
         if not isinstance(parsed, list):
 
             return {
+
                 "status": "invalid",
-                "error": "Expected JSON array"
+
+                "error": (
+                    "Expected JSON array"
+                )
+            }
+
+        # =================================================
+        # EMPTY RESULT CHECK
+        # =================================================
+
+        if len(parsed) == 0:
+
+            return {
+
+                "status": "invalid",
+
+                "error": (
+                    "NO FINANCIAL DATA "
+                    "EXTRACTED"
+                )
+            }
+
+        # =================================================
+        # MAX ENTRY CHECK
+        # =================================================
+
+        if len(parsed) > 14:
+
+            return {
+
+                "status": "invalid",
+
+                "error": (
+                    "More than 14 "
+                    "entries returned"
+                )
             }
 
         # =================================================
@@ -94,11 +223,21 @@ def validate_data(email_text, data):
         # =================================================
 
         validate(
+
             instance=parsed,
+
             schema=transaction_schema
         )
 
+        # =================================================
+        # STORAGE
+        # =================================================
+
         validated_transactions = []
+
+        validation_errors = []
+
+        voucher_groups = defaultdict(list)
 
         # =================================================
         # VALIDATE EACH TRANSACTION
@@ -107,28 +246,35 @@ def validate_data(email_text, data):
         for idx, transaction in enumerate(parsed):
 
             # =============================================
-            # EMPTY VALUE CHECK
-            # =============================================
-
-            for key, value in transaction.items():
-
-                if value is None or str(value).strip() == "":
-
-                    return {
-                        "status": "invalid",
-                        "error": f"Empty value found in '{key}'",
-                        "failed_field": key,
-                        "current_value": value,
-                        "transaction_index": idx
-                    }
-
-            # =============================================
             # PYDANTIC VALIDATION
             # =============================================
 
-            validated = Transaction(**transaction)
+            try:
 
-            cleaned_transaction = validated.dict()
+                validated = GLTransaction(
+                    **transaction
+                )
+
+                cleaned_transaction = (
+                    validated.dict()
+                )
+
+            except ValidationError as ve:
+
+                validation_errors.append({
+
+                    "error": (
+                        "Pydantic validation failed"
+                    ),
+
+                    "validation_error": (
+                        ve.errors()
+                    ),
+
+                    "transaction_index": idx
+                })
+
+                continue
 
             # =============================================
             # CLEAN STRING VALUES
@@ -138,169 +284,350 @@ def validate_data(email_text, data):
 
                 if isinstance(value, str):
 
-                    cleaned_transaction[key] = value.strip()
+                    cleaned_transaction[key] = (
+
+                        value.strip()
+                    )
 
             # =============================================
-            # REGEX VALIDATION
+            # REQUIRED FIELD CHECK
             # =============================================
 
-            if not re.match(
-                r"^[A-Za-z0-9_-]+$",
-                cleaned_transaction["transaction_id"]
-            ):
-
-                return {
-                    "status": "invalid",
-                    "error": "Invalid transaction_id format",
-                    "failed_field": "transaction_id",
-                    "current_value": cleaned_transaction[
-                        "transaction_id"
-                    ],
-                    "transaction_index": idx
-                }
-
-            # =============================================
-            # RAPIDFUZZ VALIDATION
-            # =============================================
-
-            customer_score = fuzz.partial_ratio(
-                cleaned_transaction[
-                    "customer_name"
-                ].lower(),
-                email_text.lower()
+            voucher_date = cleaned_transaction.get(
+                "voucher_date",
+                ""
             )
 
-            merchant_score = fuzz.partial_ratio(
-                cleaned_transaction[
-                    "merchant_name"
-                ].lower(),
-                email_text.lower()
-            )
+            if voucher_date == "":
 
-            transaction_score = fuzz.partial_ratio(
-                cleaned_transaction[
-                    "transaction_id"
-                ].lower(),
-                email_text.lower()
-            )
+                validation_errors.append({
 
-            # =============================================
-            # CUSTOMER NAME VALIDATION
-            # =============================================
-
-            if customer_score < 70:
-
-                return {
-                    "status": "invalid",
-                    "error": "Customer name mismatch",
-                    "failed_field": "customer_name",
-                    "current_value": cleaned_transaction[
-                        "customer_name"
-                    ],
-                    "similarity_score": customer_score,
-                    "transaction_index": idx
-                }
-
-            # =============================================
-            # MERCHANT NAME VALIDATION
-            # =============================================
-
-            if merchant_score < 70:
-
-                return {
-                    "status": "invalid",
-                    "error": "Merchant name mismatch",
-                    "failed_field": "merchant_name",
-                    "current_value": cleaned_transaction[
-                        "merchant_name"
-                    ],
-                    "similarity_score": merchant_score,
-                    "transaction_index": idx
-                }
-
-            # =============================================
-            # TRANSACTION ID VALIDATION
-            # =============================================
-
-            if transaction_score < 70:
-
-                return {
-                    "status": "invalid",
-                    "error": "Transaction ID mismatch",
-                    "failed_field": "transaction_id",
-                    "current_value": cleaned_transaction[
-                        "transaction_id"
-                    ],
-                    "similarity_score": transaction_score,
-                    "transaction_index": idx
-                }
-
-            # =============================================
-            # AMOUNT RAPIDFUZZ VALIDATION
-            # =============================================
-
-            amount_text = str(
-                cleaned_transaction["amount"]
-            )
-
-            clean_email = (
-                email_text.replace(",", "")
-            )
-
-            amount_score = fuzz.partial_ratio(
-                amount_text,
-                clean_email
-            )
-
-            # =============================================
-            # AMOUNT VALIDATION
-            # =============================================
-
-            if amount_score < 60:
-
-                return {
-                    "status": "invalid",
                     "error": (
-                        "Amount mismatch "
-                        "with source email"
+                        "voucher_date is empty"
                     ),
-                    "failed_field": "amount",
-                    "current_value": cleaned_transaction[
-                        "amount"
-                    ],
-                    "similarity_score": amount_score,
+
+                    "failed_field": (
+                        "voucher_date"
+                    ),
+
+                    "current_value": "",
+
                     "transaction_index": idx
-                }
+                })
 
             # =============================================
-            # SAVE VALID TRANSACTION
+            # NUMERIC FIELD VALIDATION
+            # =============================================
+
+            numeric_fields = [
+
+                "debit_amount",
+
+                "credit_amount",
+
+                "balance",
+
+                "amount"
+            ]
+
+            for field in numeric_fields:
+
+                value = cleaned_transaction.get(
+                    field,
+                    ""
+                )
+
+                # =========================================
+                # SKIP EMPTY VALUES
+                # =========================================
+
+                if value in ["", None]:
+
+                    continue
+
+                try:
+
+                    safe_float(value)
+
+                except:
+
+                    validation_errors.append({
+
+                        "error": (
+                            f"{field} "
+                            "must be numeric"
+                        ),
+
+                        "failed_field": field,
+
+                        "current_value": value,
+
+                        "transaction_index": idx
+                    })
+
+            # =============================================
+            # DEBIT/CREDIT EMPTY CHECK
+            # =============================================
+
+            debit = cleaned_transaction.get(
+                "debit_amount",
+                ""
+            )
+
+            credit = cleaned_transaction.get(
+                "credit_amount",
+                ""
+            )
+
+            if debit in ["", None] and credit in ["", None]:
+
+                validation_errors.append({
+
+                    "error": (
+                        "Both debit and "
+                        "credit are empty"
+                    ),
+
+                    "failed_field": (
+                        "debit_credit"
+                    ),
+
+                    "current_value": "",
+
+                    "transaction_index": idx
+                })
+
+            # =============================================
+            # BOTH SIDES FILLED CHECK
+            # =============================================
+
+            if debit not in ["", None] and credit not in ["", None]:
+
+                validation_errors.append({
+
+                    "error": (
+                        "Both debit and "
+                        "credit are filled"
+                    ),
+
+                    "failed_field": (
+                        "debit_credit"
+                    ),
+
+                    "current_value": (
+                        f"Debit={debit}, "
+                        f"Credit={credit}"
+                    ),
+
+                    "transaction_index": idx
+                })
+
+            # =============================================
+            # DATE FORMAT CHECK
+            # =============================================
+
+            if voucher_date:
+
+                date_pattern = (
+
+                    r"^[0-9:/._ -]+$"
+                )
+
+                if not re.match(
+
+                    date_pattern,
+
+                    voucher_date
+
+                ):
+
+                    validation_errors.append({
+
+                        "error": (
+                            "Invalid voucher "
+                            "date format"
+                        ),
+
+                        "failed_field": (
+                            "voucher_date"
+                        ),
+
+                        "current_value": (
+                            voucher_date
+                        ),
+
+                        "transaction_index": idx
+                    })
+
+            # =============================================
+            # FUZZY VALIDATION
+            # =============================================
+
+            particulars = (
+
+                cleaned_transaction.get(
+                    "particulars",
+                    ""
+                )
+            )
+
+            if particulars:
+
+                particulars_score = (
+
+                    fuzz.partial_ratio(
+
+                        particulars.lower(),
+
+                        email_text.lower()
+                    )
+                )
+
+                if particulars_score < 50:
+
+                    validation_errors.append({
+
+                        "error": (
+                            "Particulars mismatch"
+                        ),
+
+                        "failed_field": (
+                            "particulars"
+                        ),
+
+                        "current_value": (
+                            particulars
+                        ),
+
+                        "similarity_score": (
+                            particulars_score
+                        ),
+
+                        "transaction_index": idx
+                    })
+
+            # =============================================
+            # STORE FOR VOUCHER GROUPING
+            # =============================================
+
+            voucher_number = cleaned_transaction.get(
+
+                "voucher_number",
+
+                ""
+            )
+
+            base_voucher = str(voucher_number).split(".")[0]
+
+            voucher_groups[base_voucher].append(
+
+                cleaned_transaction
+            )
+
+            # =============================================
+            # SAVE TRANSACTION
             # =============================================
 
             validated_transactions.append(
+
                 cleaned_transaction
             )
+
+        # =================================================
+        # VOUCHER BALANCING VALIDATION
+        # =================================================
+
+        print("\nCHECKING VOUCHER BALANCING...\n")
+
+        for voucher_id, transactions in voucher_groups.items():
+
+            total_debit = 0.0
+
+            total_credit = 0.0
+
+            for tx in transactions:
+
+                total_debit += safe_float(
+
+                    tx.get("debit_amount", "")
+                )
+
+                total_credit += safe_float(
+
+                    tx.get("credit_amount", "")
+                )
+
+            total_debit = round(total_debit, 2)
+
+            total_credit = round(total_credit, 2)
+
+            print(
+
+                f"Voucher {voucher_id} "
+                f"→ Debit: {total_debit} "
+                f"| Credit: {total_credit}"
+            )
+
+            # =============================================
+            # BALANCE CHECK
+            # =============================================
+
+            if total_debit != total_credit:
+
+                validation_errors.append({
+
+                    "error": (
+                        f"Voucher {voucher_id} "
+                        "not balanced"
+                    ),
+
+                    "voucher_number": voucher_id,
+
+                    "debit_total": total_debit,
+
+                    "credit_total": total_credit
+                })
+
+        # =================================================
+        # VALIDATION FAILURE
+        # =================================================
+
+        if validation_errors:
+
+            print("\nVALIDATION FAILED\n")
+
+            print(validation_errors)
+
+            return {
+
+                "status": "invalid",
+
+                "total_errors": len(
+                    validation_errors
+                ),
+
+                "errors": validation_errors,
+
+                "validated_count": len(
+                    validated_transactions
+                )
+            }
 
         # =================================================
         # SUCCESS
         # =================================================
 
+        print("\nVALIDATION SUCCESSFUL\n")
+
         return {
+
             "status": "valid",
+
             "validated_count": len(
                 validated_transactions
             ),
+
             "data": validated_transactions
-        }
-
-    # =====================================================
-    # PYDANTIC ERROR
-    # =====================================================
-
-    except ValidationError as ve:
-
-        return {
-            "status": "invalid",
-            "validation_error": ve.errors()
         }
 
     # =====================================================
@@ -310,7 +637,9 @@ def validate_data(email_text, data):
     except json.JSONDecodeError as je:
 
         return {
+
             "status": "invalid",
+
             "json_error": str(je)
         }
 
@@ -321,6 +650,8 @@ def validate_data(email_text, data):
     except Exception as e:
 
         return {
+
             "status": "invalid",
+
             "error": str(e)
         }

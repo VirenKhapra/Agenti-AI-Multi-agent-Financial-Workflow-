@@ -1,6 +1,7 @@
 print("GRAPH FILE STARTED")
 
 import json
+
 from typing import TypedDict
 
 print("TypedDict imported")
@@ -43,11 +44,18 @@ print("re_extractor imported")
 class AgentState(TypedDict):
 
     email_text: str
+
     extracted_data: str
+
     validation_result: dict
+
     corrected_data: dict
+
     ui_result: dict
+
     retry_count: int
+
+    processing_status: str
 
 
 # =========================================================
@@ -55,6 +63,14 @@ class AgentState(TypedDict):
 # =========================================================
 
 def fetch_email_node(state):
+
+    print("\n=================================================")
+    print("AGENT: EMAIL FETCH AGENT")
+    print("TOOLS USED:")
+    print("- Gmail IMAP")
+    print("- Email Parser")
+    print("- Attachment Reader")
+    print("=================================================\n")
 
     print("\nFETCHING EMAIL...\n")
 
@@ -64,17 +80,52 @@ def fetch_email_node(state):
 
         "email_text": email_text,
 
-        "retry_count": 0
+        "retry_count": 0,
+
+        "processing_status": "email_fetched"
     }
 
 
 # =========================================================
-# NODE 2 → EXTRACT DATA
+# NODE 2 → PREPROCESSING TOOLS NODE
+# =========================================================
+
+def preprocessing_tools_node(state):
+
+    print("\n=================================================")
+    print("AGENT: PREPROCESSING TOOL AGENT")
+    print("TOOLS USED:")
+    print("- Excel Reader Tool")
+    print("- Field Mapper Tool")
+    print("- Relational Mapper Tool")
+    print("- Financial Logic Tool")
+    print("- Data Cleaner Tool")
+    print("=================================================\n")
+
+    print("\nRUNNING PREPROCESSING TOOLS...\n")
+
+    return {
+
+        "processing_status": "preprocessed"
+    }
+
+
+# =========================================================
+# NODE 3 → EXTRACT DATA
 # =========================================================
 
 def extract_data_node(state):
 
-    print("\nEXTRACTING DATA...\n")
+    print("\n=================================================")
+    print("AGENT: EXTRACTION AGENT")
+    print("TOOLS USED:")
+    print("- Groq API")
+    print("- Llama 3.3 70B")
+    print("- Prompt Engineering")
+    print("- JSON Structuring")
+    print("=================================================\n")
+
+    print("\nRUNNING LLM NORMALIZATION...\n")
 
     extracted = extract_data(
         state["email_text"]
@@ -82,17 +133,29 @@ def extract_data_node(state):
 
     return {
 
-        "extracted_data": extracted
+        "extracted_data": extracted,
+
+        "processing_status": "data_extracted"
     }
 
 
 # =========================================================
-# NODE 3 → VALIDATE DATA
+# NODE 4 → VALIDATE DATA
 # =========================================================
 
 def validate_node(state):
 
-    print("\nVALIDATING DATA...\n")
+    print("\n=================================================")
+    print("AGENT: VALIDATOR AGENT")
+    print("TOOLS USED:")
+    print("- Pydantic")
+    print("- JSON Schema Validation")
+    print("- Voucher Balancing Logic")
+    print("- Financial Validation Engine")
+    print("- RapidFuzz Similarity")
+    print("=================================================\n")
+
+    print("\nVALIDATING GL DATA...\n")
 
     result = validate_data(
 
@@ -102,11 +165,8 @@ def validate_node(state):
     )
 
     print("\nVALIDATION RESULT:\n")
-    print(result)
 
-    # =====================================================
-    # CURRENT RETRY COUNT
-    # =====================================================
+    print(result)
 
     retry_count = state.get(
         "retry_count",
@@ -114,7 +174,7 @@ def validate_node(state):
     )
 
     # =====================================================
-    # INCREMENT ONLY IF INVALID
+    # INCREMENT RETRIES
     # =====================================================
 
     if result["status"] == "invalid":
@@ -125,136 +185,191 @@ def validate_node(state):
 
         "validation_result": result,
 
-        "retry_count": retry_count
+        "retry_count": retry_count,
+
+        "processing_status": "validated"
     }
 
 
 # =========================================================
-# NODE 4 → RE-EXTRACT FAILED FIELD
+# NODE 5 → RE-EXTRACT FAILED FIELDS
 # =========================================================
 
 def re_extract_node(state):
 
+    print("\n=================================================")
+    print("AGENT: RE-EXTRACTION AGENT")
+    print("TOOLS USED:")
+    print("- Groq API")
+    print("- Llama 3.3 70B")
+    print("- JSON Repair")
+    print("- Field Correction Logic")
+    print("=================================================\n")
+
     print(
-        "\nRE-EXTRACTING FAILED FIELD...\n"
+        "\nRE-EXTRACTING FAILED FIELDS...\n"
     )
 
     validation = state[
         "validation_result"
     ]
 
-    failed_field = validation[
-        "failed_field"
-    ]
-
-    current_value = validation[
-        "current_value"
-    ]
-
-    transaction_index = validation[
-        "transaction_index"
-    ]
-
-    # =====================================================
-    # LOAD EXISTING JSON
-    # =====================================================
-
-    parsed_data = json.loads(
-        state["extracted_data"]
+    errors = validation.get(
+        "errors",
+        []
     )
 
-    # =====================================================
-    # FAILED TRANSACTION ONLY
-    # =====================================================
+    try:
 
-    failed_transaction = parsed_data[
-        transaction_index
-    ]
-
-    # =====================================================
-    # RE-EXTRACT FIELD
-    # =====================================================
-
-    corrected_value = re_extract_field(
-
-        failed_transaction,
-
-        failed_field,
-
-        current_value
-    )
-
-    # =====================================================
-    # RE-EXTRACTION FAILED
-    # =====================================================
-
-    if corrected_value is None:
-
-        print(
-            "\nRE-EXTRACTION COULD "
-            "NOT RECOVER VALUE\n"
+        parsed_data = json.loads(
+            state["extracted_data"]
         )
 
-        return {
+    except Exception as e:
 
-            "extracted_data": state[
-                "extracted_data"
+        print("\nJSON LOAD FAILED\n")
+
+        print(e)
+
+        return {}
+
+    if not isinstance(parsed_data, list):
+
+        print("\nINVALID PARSED DATA\n")
+
+        return {}
+
+    for error in errors:
+
+        if "failed_field" not in error:
+
+            continue
+
+        failed_field = error[
+            "failed_field"
+        ]
+
+        current_value = error.get(
+            "current_value",
+            ""
+        )
+
+        transaction_index = error.get(
+            "transaction_index",
+            0
+        )
+
+        if transaction_index >= len(parsed_data):
+
+            continue
+
+        failed_transaction = parsed_data[
+            transaction_index
+        ]
+
+        print(
+            f"\nFIXING TRANSACTION "
+            f"{transaction_index}"
+        )
+
+        print(
+            f"FAILED FIELD: "
+            f"{failed_field}"
+        )
+
+        corrected_value = re_extract_field(
+
+            failed_transaction,
+
+            failed_field,
+
+            current_value
+        )
+
+        if corrected_value is None:
+
+            print(
+                "\nVALUE COULD NOT "
+                "BE RECOVERED\n"
+            )
+
+            continue
+
+        parsed_data[
+            transaction_index
+        ][failed_field] = corrected_value
+
+        print(
+            "\nUPDATED TRANSACTION:\n"
+        )
+
+        print(
+            parsed_data[
+                transaction_index
             ]
-        }
-
-    # =====================================================
-    # UPDATE FAILED FIELD
-    # =====================================================
-
-    parsed_data[
-        transaction_index
-    ][failed_field] = corrected_value
+        )
 
     updated_json = json.dumps(
         parsed_data,
         indent=4
     )
 
-    print(
-        "\nUPDATED TRANSACTION FIELD:\n"
-    )
-
-    print(
-        parsed_data[transaction_index]
-    )
-
     return {
 
-        "extracted_data": updated_json
+        "extracted_data": updated_json,
+
+        "processing_status": "re_extracted"
     }
 
 
 # =========================================================
-# NODE 5 → PUSH TO UI
+# NODE 6 → PUSH TO UI
 # =========================================================
 
 def push_to_ui_node(state):
 
-    print("\nPUSHING DATA TO FRONTEND...\n")
+    print("\n=================================================")
+    print("AGENT: UI AGENT")
+    print("TOOLS USED:")
+    print("- REST API")
+    print("- JSON Export")
+    print("- Frontend Connector")
+    print("- Excel Generator")
+    print("=================================================\n")
+
+    print(
+        "\nPUSHING DATA TO FRONTEND...\n"
+    )
 
     result = push_to_ui(
         state["validation_result"]
     )
 
     print("\nUI RESULT:\n")
+
     print(result)
 
     return {
 
-        "ui_result": result
+        "ui_result": result,
+
+        "processing_status": "completed"
     }
 
 
 # =========================================================
-# NODE 6 → NOTIFICATION AGENT
+# NODE 7 → NOTIFICATION AGENT
 # =========================================================
 
 def notification_node(state):
+
+    print("\n=================================================")
+    print("AGENT: NOTIFICATION AGENT")
+    print("TOOLS USED:")
+    print("- SMTP")
+    print("- MIME Email")
+    print("- Failure Alert System")
+    print("=================================================\n")
 
     print(
         "\nMANUAL VERIFICATION REQUIRED\n"
@@ -264,10 +379,16 @@ def notification_node(state):
         state["validation_result"]
     )
 
-    print("\nNOTIFICATION RESULT:\n")
+    print(
+        "\nNOTIFICATION RESULT:\n"
+    )
+
     print(result)
 
-    return {}
+    return {
+
+        "processing_status": "manual_review"
+    }
 
 
 # =========================================================
@@ -276,27 +397,20 @@ def notification_node(state):
 
 def validation_router(state):
 
-    # =====================================================
-    # VALID DATA
-    # =====================================================
+    validation_result = state.get(
+        "validation_result",
+        {}
+    )
 
-    if (
-
-        state["validation_result"][
-            "status"
-        ] == "valid"
-
-    ):
+    if validation_result.get(
+        "status"
+    ) == "valid":
 
         print(
             "\nVALIDATION SUCCESSFUL\n"
         )
 
         return "valid"
-
-    # =====================================================
-    # INVALID DATA
-    # =====================================================
 
     current_retry = state.get(
         "retry_count",
@@ -308,10 +422,6 @@ def validation_router(state):
         f"→ RETRY {current_retry}/5\n"
     )
 
-    # =====================================================
-    # MAX RETRIES REACHED
-    # =====================================================
-
     if current_retry >= 5:
 
         print(
@@ -319,10 +429,6 @@ def validation_router(state):
         )
 
         return "notify"
-
-    # =====================================================
-    # RE-EXTRACT
-    # =====================================================
 
     return "re_extract"
 
@@ -343,6 +449,11 @@ workflow = StateGraph(
 workflow.add_node(
     "fetch_email",
     fetch_email_node
+)
+
+workflow.add_node(
+    "preprocessing_tools",
+    preprocessing_tools_node
 )
 
 workflow.add_node(
@@ -386,6 +497,11 @@ workflow.set_entry_point(
 
 workflow.add_edge(
     "fetch_email",
+    "preprocessing_tools"
+)
+
+workflow.add_edge(
+    "preprocessing_tools",
     "extract_data"
 )
 
@@ -401,7 +517,7 @@ workflow.add_edge(
 
 
 # =========================================================
-# CONDITIONAL VALIDATION FLOW
+# CONDITIONAL FLOW
 # =========================================================
 
 workflow.add_conditional_edges(
@@ -422,7 +538,7 @@ workflow.add_conditional_edges(
 
 
 # =========================================================
-# FINAL FLOWS
+# FINAL FLOW
 # =========================================================
 
 workflow.add_edge(
@@ -450,9 +566,7 @@ app = workflow.compile()
 try:
 
     graph_image = (
-
         app.get_graph()
-
         .draw_mermaid_png()
     )
 

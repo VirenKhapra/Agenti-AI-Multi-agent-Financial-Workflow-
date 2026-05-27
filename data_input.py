@@ -1,147 +1,441 @@
 import imaplib
 import email
 import os
+import json
+
 from dotenv import load_dotenv
 from pathlib import Path
+
 import PyPDF2
 import pandas as pd
 
+# =====================================================
+# CUSTOM TOOLS
+# =====================================================
+
+from excel_reader_tool import read_excel_tool
+
+from limit_tool import limit_rows_tool
+
+from field_mapper_tool import field_mapper_tool
+
+from text_cleaner_tool import clean_dataframe_tool
+
+from relation_mapper_tool import relation_mapper_tool
+
+from financial_logic_tool import financial_logic_tool
+
+
+# =====================================================
+# LOAD ENV VARIABLES
+# =====================================================
+
 env_path = Path(__file__).parent / ".env"
+
 load_dotenv(dotenv_path=env_path)
 
-# Credentials
+
+# =====================================================
+# EMAIL CREDENTIALS
+# =====================================================
+
 EMAIL_USER = "testpurpose917@gmail.com"
+
 EMAIL_PASS = "yurwgblgotrhrbjf"
 
+
 print("EMAIL_USER:", EMAIL_USER)
+
 print("EMAIL_PASS:", EMAIL_PASS)
 
+
+# =====================================================
+# ATTACHMENT FOLDER
+# =====================================================
+
 ATTACHMENT_FOLDER = "attachments"
-os.makedirs(ATTACHMENT_FOLDER, exist_ok=True)
+
+os.makedirs(
+    ATTACHMENT_FOLDER,
+    exist_ok=True
+)
 
 
-# 🔹 Connect to Email
+# =====================================================
+# CONNECT TO EMAIL
+# =====================================================
+
 def connect_email():
-    print("🔌 Connecting to Gmail...")
-    mail = imaplib.IMAP4_SSL("imap.gmail.com")
-    mail.login(EMAIL_USER, EMAIL_PASS)
-    print(" Connected successfully!")
+
+    print("\nCONNECTING TO GMAIL...\n")
+
+    mail = imaplib.IMAP4_SSL(
+        "imap.gmail.com"
+    )
+
+    mail.login(
+        EMAIL_USER,
+        EMAIL_PASS
+    )
+
+    print("CONNECTED SUCCESSFULLY")
+
     return mail
 
 
-# 🔹 Fetch Latest Email
+# =====================================================
+# FETCH LATEST EMAIL
+# =====================================================
+
 def fetch_latest_email(mail):
+
     mail.select("inbox")
 
-    status, messages = mail.search(None, "ALL")
-    print(" Email search status:", status)
+    status, messages = mail.search(
+        None,
+        "ALL"
+    )
+
+    print(
+        "EMAIL SEARCH STATUS:",
+        status
+    )
 
     email_ids = messages[0].split()
-    print(" Total emails found:", len(email_ids))
+
+    print(
+        "TOTAL EMAILS FOUND:",
+        len(email_ids)
+    )
 
     if not email_ids:
-        print("❌ No emails found!")
+
+        print("\nNO EMAILS FOUND\n")
+
         return ""
 
     latest_email_id = email_ids[-1]
-    print("📩 Latest email ID:", latest_email_id)
 
-    res, msg_data = mail.fetch(latest_email_id, "(RFC822)")
+    print(
+        "LATEST EMAIL ID:",
+        latest_email_id
+    )
+
+    res, msg_data = mail.fetch(
+        latest_email_id,
+        "(RFC822)"
+    )
 
     for response in msg_data:
+
         if isinstance(response, tuple):
-            msg = email.message_from_bytes(response[1])
+
+            msg = email.message_from_bytes(
+                response[1]
+            )
+
             return process_email(msg)
 
     return ""
 
 
-# 🔹 Process Email (Body + Attachments)
+# =====================================================
+# PROCESS EMAIL
+# =====================================================
+
 def process_email(msg):
+
     full_text = ""
 
     for part in msg.walk():
+
         content_type = part.get_content_type()
+
         filename = part.get_filename()
 
-        print(" Found part:", content_type, "| File:", filename)
+        print(
+            "\nFOUND PART:",
+            content_type,
+            "| FILE:",
+            filename
+        )
 
-        # 📄 Email Body (handles plain + html)
+        # =================================================
+        # EMAIL BODY
+        # =================================================
+
         if "text" in content_type and filename is None:
+
             try:
-                body = part.get_payload(decode=True)
+
+                body = part.get_payload(
+                    decode=True
+                )
+
                 if body:
-                    body = body.decode(errors="ignore")
-                    full_text += "\n" + clean_text(body)
-            except Exception as e:
-                print("⚠️ Error reading body:", e)
 
-        # 📎 Attachments
+                    body = body.decode(
+                        errors="ignore"
+                    )
+
+                    full_text += (
+                        "\n" + clean_text(body)
+                    )
+
+            except Exception as e:
+
+                print(
+                    "\nERROR READING EMAIL BODY\n"
+                )
+
+                print(e)
+
+        # =================================================
+        # ATTACHMENTS
+        # =================================================
+
         elif filename:
-            filepath = os.path.join(ATTACHMENT_FOLDER, filename)
+
+            filepath = os.path.join(
+                ATTACHMENT_FOLDER,
+                filename
+            )
 
             try:
-                with open(filepath, "wb") as f:
-                    f.write(part.get_payload(decode=True))
 
-                extracted_text = extract_attachment_text(filepath)
-                full_text += "\n" + extracted_text
+                with open(filepath, "wb") as f:
+
+                    f.write(
+                        part.get_payload(
+                            decode=True
+                        )
+                    )
+
+                print(
+                    f"\nATTACHMENT SAVED: {filepath}\n"
+                )
+
+                extracted_text = (
+                    extract_attachment_text(
+                        filepath
+                    )
+                )
+
+                full_text += (
+                    "\n" + extracted_text
+                )
+
             except Exception as e:
-                print("⚠️ Error processing attachment:", e)
+
+                print(
+                    "\nERROR PROCESSING ATTACHMENT\n"
+                )
+
+                print(e)
 
     return full_text.strip()
 
 
-# 🔹 Extract Text from Attachments
+# =====================================================
+# ATTACHMENT ROUTER
+# =====================================================
+
 def extract_attachment_text(filepath):
+
+    # =================================================
+    # PDF
+    # =================================================
+
     if filepath.lower().endswith(".pdf"):
+
         return extract_pdf(filepath)
 
-    elif filepath.lower().endswith((".xlsx", ".xls")):
+    # =================================================
+    # EXCEL
+    # =================================================
+
+    elif filepath.lower().endswith(
+        (".xlsx", ".xls")
+    ):
+
         return extract_excel(filepath)
 
+    # =================================================
+    # UNSUPPORTED
+    # =================================================
+
     else:
+
+        print(
+            "\nUNSUPPORTED FILE TYPE\n"
+        )
+
         return ""
 
 
-# 🔹 PDF Reader
+# =====================================================
+# PDF EXTRACTION
+# =====================================================
+
 def extract_pdf(filepath):
+
+    print("\nREADING PDF...\n")
+
     text = ""
+
     try:
+
         with open(filepath, "rb") as f:
+
             reader = PyPDF2.PdfReader(f)
+
             for page in reader.pages:
-                text += page.extract_text() or ""
+
+                text += (
+                    page.extract_text()
+                    or ""
+                )
+
     except Exception as e:
-        print("⚠️ PDF read error:", e)
+
+        print("\nPDF READ ERROR\n")
+
+        print(e)
 
     return clean_text(text)
 
 
-# 🔹 Excel Reader
+# =====================================================
+# EXCEL EXTRACTION PIPELINE
+# =====================================================
+
 def extract_excel(filepath):
+
+    print(
+        "\nSTARTING EXCEL PREPROCESSING PIPELINE...\n"
+    )
+
     try:
-        df = pd.read_excel(filepath)
-        return clean_text(df.to_string())
+
+        # =================================================
+        # STEP 1 → READ EXCEL
+        # =================================================
+
+        df = read_excel_tool(filepath)
+
+        if df is None:
+
+            return ""
+
+        # =================================================
+        # STEP 2 → LIMIT ROWS
+        # =================================================
+
+        df = limit_rows_tool(
+            df,
+            limit=14
+        )
+
+        if df is None:
+
+            return ""
+
+        # =================================================
+        # STEP 3 → FIELD MAPPING
+        # =================================================
+
+        df = field_mapper_tool(df)
+
+        # =================================================
+        # STEP 4 → CLEAN DATA
+        # =================================================
+
+        df = clean_dataframe_tool(df)
+
+        # =================================================
+        # STEP 5 → RELATIONAL MAPPING
+        # =================================================
+
+        df = relation_mapper_tool(
+            df,
+            filepath
+        )
+
+        # =================================================
+        # STEP 6 → FINANCIAL LOGIC
+        # =================================================
+
+        df = financial_logic_tool(df)
+
+        # =================================================
+        # STEP 7 → CONVERT TO JSON
+        # =================================================
+
+        structured_json = df.to_dict(
+            orient="records"
+        )
+
+        print(
+            "\nEXCEL PREPROCESSING COMPLETED\n"
+        )
+
+        print(
+            "\nFINAL DATAFRAME COLUMNS:\n"
+        )
+
+        print(df.columns.tolist())
+
+        return json.dumps(
+
+            structured_json,
+
+            indent=2,
+
+            default=str
+        )
+
     except Exception as e:
-        print("⚠️ Excel read error:", e)
+
+        print(
+            "\nEXCEL PROCESSING ERROR\n"
+        )
+
+        print(e)
+
         return ""
 
 
-# 🔹 Clean Text
+# =====================================================
+# CLEAN TEXT
+# =====================================================
+
 def clean_text(text):
+
     text = text.strip()
+
     text = " ".join(text.split())
+
     return text
 
 
-# 🔹 Final Function (IMPORTANT)
+# =====================================================
+# MAIN FUNCTION
+# =====================================================
+
 def get_email_text():
-    print(" Starting email extraction pipeline...")
+
+    print(
+        "\nSTARTING EMAIL EXTRACTION PIPELINE...\n"
+    )
 
     mail = connect_email()
+
     data = fetch_latest_email(mail)
 
-    print("\n📄 FINAL EXTRACTED DATA:\n", data[:500])  # show preview
+    print(
+        "\nFINAL EXTRACTED DATA PREVIEW:\n"
+    )
+
+    print(data[:3000])
 
     return data
