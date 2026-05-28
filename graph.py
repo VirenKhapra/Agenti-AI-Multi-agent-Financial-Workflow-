@@ -65,7 +65,7 @@ class AgentState(TypedDict):
 def fetch_email_node(state):
 
     print("\n=================================================")
-    print("AGENT: EMAIL FETCH AGENT")
+    print("AGENT: EMAIL AGENT")
     print("TOOLS USED:")
     print("- Gmail IMAP")
     print("- Email Parser")
@@ -87,13 +87,13 @@ def fetch_email_node(state):
 
 
 # =========================================================
-# NODE 2 → PREPROCESSING TOOLS NODE
+# NODE 2 → INPUT AGENT
 # =========================================================
 
 def preprocessing_tools_node(state):
 
     print("\n=================================================")
-    print("AGENT: PREPROCESSING TOOL AGENT")
+    print("AGENT: INPUT AGENT")
     print("TOOLS USED:")
     print("- Excel Reader Tool")
     print("- Field Mapper Tool")
@@ -102,7 +102,7 @@ def preprocessing_tools_node(state):
     print("- Data Cleaner Tool")
     print("=================================================\n")
 
-    print("\nRUNNING PREPROCESSING TOOLS...\n")
+    print("\nRUNNING INPUT PREPROCESSING...\n")
 
     return {
 
@@ -111,7 +111,7 @@ def preprocessing_tools_node(state):
 
 
 # =========================================================
-# NODE 3 → EXTRACT DATA
+# NODE 3 → EXTRACTION AGENT
 # =========================================================
 
 def extract_data_node(state):
@@ -122,10 +122,10 @@ def extract_data_node(state):
     print("- Groq API")
     print("- Llama 3.3 70B")
     print("- Prompt Engineering")
-    print("- JSON Structuring")
+    print("- Structured JSON Extraction")
     print("=================================================\n")
 
-    print("\nRUNNING LLM NORMALIZATION...\n")
+    print("\nRUNNING LLM EXTRACTION...\n")
 
     extracted = extract_data(
         state["email_text"]
@@ -140,7 +140,7 @@ def extract_data_node(state):
 
 
 # =========================================================
-# NODE 4 → VALIDATE DATA
+# NODE 4 → VALIDATOR AGENT
 # =========================================================
 
 def validate_node(state):
@@ -155,7 +155,7 @@ def validate_node(state):
     print("- RapidFuzz Similarity")
     print("=================================================\n")
 
-    print("\nVALIDATING GL DATA...\n")
+    print("\nVALIDATING DATA...\n")
 
     result = validate_data(
 
@@ -174,7 +174,7 @@ def validate_node(state):
     )
 
     # =====================================================
-    # INCREMENT RETRIES
+    # RETRY COUNTER
     # =====================================================
 
     if result["status"] == "invalid":
@@ -192,7 +192,7 @@ def validate_node(state):
 
 
 # =========================================================
-# NODE 5 → RE-EXTRACT FAILED FIELDS
+# NODE 5 → RE-EXTRACTION AGENT
 # =========================================================
 
 def re_extract_node(state):
@@ -207,7 +207,7 @@ def re_extract_node(state):
     print("=================================================\n")
 
     print(
-        "\nRE-EXTRACTING FAILED FIELDS...\n"
+        "\nRE-EXTRACTING INVALID FIELDS...\n"
     )
 
     validation = state[
@@ -289,8 +289,7 @@ def re_extract_node(state):
         if corrected_value is None:
 
             print(
-                "\nVALUE COULD NOT "
-                "BE RECOVERED\n"
+                "\nFAILED TO RECOVER FIELD\n"
             )
 
             continue
@@ -323,7 +322,7 @@ def re_extract_node(state):
 
 
 # =========================================================
-# NODE 6 → PUSH TO UI
+# NODE 6 → UI AGENT
 # =========================================================
 
 def push_to_ui_node(state):
@@ -331,10 +330,10 @@ def push_to_ui_node(state):
     print("\n=================================================")
     print("AGENT: UI AGENT")
     print("TOOLS USED:")
-    print("- REST API")
-    print("- JSON Export")
-    print("- Frontend Connector")
     print("- Excel Generator")
+    print("- JSON Export")
+    print("- REST API")
+    print("- Frontend Connector")
     print("=================================================\n")
 
     print(
@@ -372,7 +371,11 @@ def notification_node(state):
     print("=================================================\n")
 
     print(
-        "\nMANUAL VERIFICATION REQUIRED\n"
+        "\nMAX RETRIES REACHED\n"
+    )
+
+    print(
+        "\nSENDING FAILURE ALERT...\n"
     )
 
     result = send_failure_notification(
@@ -387,7 +390,7 @@ def notification_node(state):
 
     return {
 
-        "processing_status": "manual_review"
+        "processing_status": "manual_review_required"
     }
 
 
@@ -402,33 +405,51 @@ def validation_router(state):
         {}
     )
 
-    if validation_result.get(
+    status = validation_result.get(
         "status"
-    ) == "valid":
-
-        print(
-            "\nVALIDATION SUCCESSFUL\n"
-        )
-
-        return "valid"
+    )
 
     current_retry = state.get(
         "retry_count",
         0
     )
 
+    # =====================================================
+    # VALID
+    # =====================================================
+
+    if status == "valid":
+
+        print(
+            "\nVALID DATA DETECTED\n"
+        )
+
+        return "valid"
+
+    # =====================================================
+    # INVALID
+    # =====================================================
+
     print(
-        f"\nVALIDATION FAILED "
+        f"\nINVALID DATA "
         f"→ RETRY {current_retry}/5\n"
     )
+
+    # =====================================================
+    # MAX RETRIES REACHED
+    # =====================================================
 
     if current_retry >= 5:
 
         print(
-            "\nMAX RETRIES REACHED\n"
+            "\nMAX RETRIES COMPLETED\n"
         )
 
         return "notify"
+
+    # =====================================================
+    # RE-EXTRACT
+    # =====================================================
 
     return "re_extract"
 
@@ -510,6 +531,10 @@ workflow.add_edge(
     "validate"
 )
 
+# =========================================================
+# RE-VALIDATE AFTER RE-EXTRACTION
+# =========================================================
+
 workflow.add_edge(
     "re_extract",
     "validate"
@@ -517,7 +542,7 @@ workflow.add_edge(
 
 
 # =========================================================
-# CONDITIONAL FLOW
+# CONDITIONAL ROUTING
 # =========================================================
 
 workflow.add_conditional_edges(
@@ -538,7 +563,7 @@ workflow.add_conditional_edges(
 
 
 # =========================================================
-# FINAL FLOW
+# FINAL NODES
 # =========================================================
 
 workflow.add_edge(

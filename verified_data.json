@@ -1,6 +1,7 @@
 {
     "status": "valid",
     "validated_count": 14,
+    "warnings": [],
     "data": [
         {
             "voucher_date": "2018-01-01 00:00:00",

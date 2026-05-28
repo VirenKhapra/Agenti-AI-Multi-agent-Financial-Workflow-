@@ -1,36 +1,74 @@
 import os
+
 from dotenv import load_dotenv
 
 from langchain.agents import initialize_agent
 from langchain.agents import AgentType
+
 from langchain_groq import ChatGroq
 
-from tools import email_tool, llm_tool, validator_tool, ui_tool
+# =========================================================
+# IMPORT ALL TOOLS
+# =========================================================
 
-# Load .env file
+from tools import ALL_TOOLS
+
+
+# =========================================================
+# LOAD ENV VARIABLES
+# =========================================================
+
 load_dotenv()
 
-# LLM
+
+# =========================================================
+# LLM CONFIGURATION
+# =========================================================
+
 llm = ChatGroq(
-    groq_api_key=os.getenv("GROQ_API_KEY"),
+
+    groq_api_key=os.getenv(
+        "GROQ_API_KEY"
+    ),
+
     model_name="llama-3.3-70b-versatile"
 )
 
-# Tool List
-tools = [email_tool, llm_tool, validator_tool, ui_tool]
 
-# ReAct Agent
+# =========================================================
+# INITIALIZE REACT AGENT
+# =========================================================
+
 agent = initialize_agent(
-    tools=tools,
+
+    tools=ALL_TOOLS,
+
     llm=llm,
+
     agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+
     verbose=True
 )
 
-# Run Agent
+
+# =========================================================
+# RUN PIPELINE
+# =========================================================
+
 response = agent.run(
-    "Fetch the latest financial email, extract structured transaction details, validate them, and push them to frontend."
+
+    "Fetch the latest financial email, "
+    "read and preprocess the financial data, "
+    "extract structured transactions, "
+    "validate them using accounting rules, "
+    "and push valid data to frontend dashboard."
 )
 
+
+# =========================================================
+# FINAL OUTPUT
+# =========================================================
+
 print("\nFINAL OUTPUT:\n")
+
 print(response)

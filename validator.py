@@ -237,6 +237,8 @@ def validate_data(
 
         validation_errors = []
 
+        validation_warnings = []
+
         voucher_groups = defaultdict(list)
 
         # =================================================
@@ -485,9 +487,9 @@ def validate_data(
 
                 if particulars_score < 50:
 
-                    validation_errors.append({
+                    validation_warnings.append({
 
-                        "error": (
+                        "warning": (
                             "Particulars mismatch"
                         ),
 
@@ -561,22 +563,43 @@ def validate_data(
 
             total_credit = round(total_credit, 2)
 
+            # =============================================
+            # DTCT DIFFERENCE CALCULATION
+            # =============================================
+
+            dtct_difference = round(
+
+                abs(total_debit - total_credit),
+
+                2
+            )
+
             print(
 
                 f"Voucher {voucher_id} "
                 f"→ Debit: {total_debit} "
-                f"| Credit: {total_credit}"
+                f"| Credit: {total_credit} "
+                f"| Difference: {dtct_difference}"
             )
 
             # =============================================
-            # BALANCE CHECK
+            # BALANCE STATUS
             # =============================================
 
-            if total_debit != total_credit:
+            is_balanced = (
 
-                validation_errors.append({
+                dtct_difference <= 0.01
+            )
 
-                    "error": (
+            # =============================================
+            # STORE WARNING ONLY
+            # =============================================
+
+            if not is_balanced:
+
+                validation_warnings.append({
+
+                    "warning": (
                         f"Voucher {voucher_id} "
                         "not balanced"
                     ),
@@ -585,7 +608,9 @@ def validate_data(
 
                     "debit_total": total_debit,
 
-                    "credit_total": total_credit
+                    "credit_total": total_credit,
+
+                    "dtct_difference": dtct_difference
                 })
 
         # =================================================
@@ -608,9 +633,13 @@ def validate_data(
 
                 "errors": validation_errors,
 
+                "warnings": validation_warnings,
+
                 "validated_count": len(
                     validated_transactions
-                )
+                ),
+
+                "data": validated_transactions
             }
 
         # =================================================
@@ -626,6 +655,8 @@ def validate_data(
             "validated_count": len(
                 validated_transactions
             ),
+
+            "warnings": validation_warnings,
 
             "data": validated_transactions
         }
