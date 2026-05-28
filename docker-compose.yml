@@ -23,6 +23,7 @@ services:
     env_file:
       - ./backend/.env
     environment:
+      ENVIRONMENT: development
       DATABASE_URL: postgresql+asyncpg://ledgerflow:ledgerflow@postgres:5432/ledgerflow
       APP_NAME: LedgerFlow Analytics API
       UPLOAD_DIR: /app/storage/uploads
