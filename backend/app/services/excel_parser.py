@@ -38,7 +38,28 @@ def parse_spreadsheet(path: Path, max_preview_rows: int) -> dict[str, Any]:
         frame = pd.read_excel(path, engine="openpyxl")
 
     frame = frame.dropna(how="all")
-    frame.columns = [str(column).strip() for column in frame.columns]
+    COLUMN_ALIASES = {
+    "date": "voucher_date",
+    "entry no": "entry_no",
+    "entry_number": "entry_no",
+    "sub account": "sub_account",
+    "ledger_name": "sub_account",
+    "particulars": "details",
+    "account class": "class",
+    "account_class": "class",
+    "account subclass": "sub_class",
+    "account_subclass": "sub_class",
+    "debit": "debit_amount",
+    "credit": "credit_amount",
+    "debit amount": "debit_amount",
+    "credit amount": "credit_amount",
+    "account code": "account_code",
+}
+
+frame.columns = [
+    COLUMN_ALIASES.get(str(col).strip().lower(), str(col).strip().lower())
+    for col in frame.columns
+]
     frame = frame.where(pd.notnull(frame), None)
 
     detected_types = infer_detected_types(frame)
