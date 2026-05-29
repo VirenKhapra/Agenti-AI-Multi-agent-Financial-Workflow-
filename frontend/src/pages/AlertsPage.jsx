@@ -1,4 +1,4 @@
-importimport React from "react";
+import React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FiAlertTriangle, FiArrowRight, FiMoreVertical, FiRefreshCw, FiSearch, FiX } from "react-icons/fi";
 import { useSearchParams } from "react-router-dom";
