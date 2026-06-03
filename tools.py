@@ -31,7 +31,7 @@ email_tool = Tool(
     name="Email Extraction Tool",
 
     func=get_email_text,
-
+ 
     description=(
         "Fetches latest financial email "
         "and extracts raw body text and attachments."

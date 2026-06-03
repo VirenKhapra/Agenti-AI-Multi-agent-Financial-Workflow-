@@ -41,6 +41,7 @@ load_dotenv(dotenv_path=env_path)
 
 EMAIL_USER = os.getenv("EMAIL_USER")
 
+
 EMAIL_PASS = os.getenv("EMAIL_PASS")
 
 
