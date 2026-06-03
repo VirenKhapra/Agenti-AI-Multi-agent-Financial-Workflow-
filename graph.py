@@ -34,6 +34,10 @@ from re_extractor import re_extract_field
 
 print("re_extractor imported")
 
+from react_agent import choose_validation_route
+
+print("react_agent imported")
+
 from pushing_validation_alert_tool import (
     push_validation_alert_tool
 )
@@ -633,6 +637,56 @@ def notification_node(state):
 # VALIDATION ROUTER
 # =========================================================
 
+def react_route_or_default(state, default_route):
+
+    print("\n=================================================")
+    print("AGENT: REACT SUPERVISOR")
+    print("TOOLS USED:")
+    print("- Groq API")
+    print("- Llama 3.3 70B")
+    print("- Validation Route Reasoning")
+    print("=================================================\n")
+
+    try:
+
+        react_route = choose_validation_route(
+            state
+        )
+
+        print(
+            "\nREACT SUPERVISOR ROUTE:\n"
+        )
+
+        print(react_route)
+
+    except Exception as e:
+
+        print(
+            "\nREACT SUPERVISOR FAILED:\n"
+        )
+
+        print(e)
+
+        return default_route
+
+    if react_route == default_route:
+
+        return react_route
+
+    print(
+        "\nREACT ROUTE DID NOT MATCH "
+        "VALIDATION SAFETY CHECK\n"
+    )
+
+    print(
+        "USING SAFE GRAPH ROUTE:\n"
+    )
+
+    print(default_route)
+
+    return default_route
+
+
 def validation_router(state):
 
     validation_result = state.get(
@@ -664,7 +718,10 @@ def validation_router(state):
             "\nVALID DATA DETECTED\n"
         )
 
-        return "valid"
+        return react_route_or_default(
+            state,
+            "valid"
+        )
 
     # =====================================================
     # JSON / EXTRACTION ERRORS
@@ -710,9 +767,15 @@ def validation_router(state):
                 "\nMAX JSON RETRIES REACHED\n"
             )
 
-            return "notify"
+            return react_route_or_default(
+                state,
+                "notify"
+            )
 
-        return "re_extract"
+        return react_route_or_default(
+            state,
+            "re_extract"
+        )
 
     # =====================================================
     # DTCD ERRORS
@@ -748,7 +811,10 @@ def validation_router(state):
             "\nSENDING TO UI + ALERT FLOW\n"
         )
 
-        return "push_with_alert"
+        return react_route_or_default(
+            state,
+            "push_with_alert"
+        )
 
     # =====================================================
     # NORMAL VALIDATION ERRORS
@@ -769,9 +835,15 @@ def validation_router(state):
             "\nMAX RETRIES COMPLETED\n"
         )
 
-        return "notify"
+        return react_route_or_default(
+            state,
+            "notify"
+        )
 
-    return "re_extract"
+    return react_route_or_default(
+        state,
+        "re_extract"
+    )
 
 
 # =========================================================
